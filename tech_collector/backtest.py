@@ -247,6 +247,31 @@ def _simulate_trade(
             exit_price = bar["open"] * slip_exit_mult
             gross_bps = (bar["open"] - entry_price) / entry_price * 10_000
             net_bps = (exit_price - effective_entry) / effective_entry * 10_000
+            # v0.7.12: invariant check on the main-loop TIME exit (parity
+            # with the fallback-path invariant on line ~327). A timestop
+            # TIME exit is supposed to fire because the trade ran out of
+            # session time without hitting TP/SL. Its gross return MUST
+            # therefore lie within [-sl_level, +tp_level] (with a 1 bp
+            # tolerance for floating-point drift). If it doesn't, the
+            # entry bar was almost certainly an after-hours bar that
+            # `_find_scan_bar_ts` should have rejected — the v0.7.12
+            # session guard prevents that, but keep the invariant as
+            # defense-in-depth so any future regression at the bar-
+            # selection layer fails LOUDLY rather than silently writing
+            # contaminated trades.
+            tol = 1.0
+            if gross_bps > tp_level + tol or gross_bps < -sl_level - tol:
+                raise AssertionError(
+                    f"TIME exit (main-loop) invariant violated: "
+                    f"gross_bps={gross_bps:.2f} outside "
+                    f"[-{sl_level}, +{tp_level}]. "
+                    f"entry_ts={entry_ts_utc}, entry_price={entry_price}, "
+                    f"timestop_bar_ts={bar.get('timestamp_utc')}, "
+                    f"timestop_open={bar['open']:.4f}, "
+                    f"et_hh:et_mm={et_hh:02d}:{et_mm:02d}. "
+                    f"Likely cause: entry bar was after-hours; check "
+                    f"_find_scan_bar_ts session guard."
+                )
             return {
                 "exit_price": exit_price,
                 "exit_time_et": f"{et_hh:02d}:{et_mm:02d}",
@@ -760,26 +785,39 @@ def _find_scan_bar_ts(
     scan_time_et: str,
     signal_date_et: str | None = None,
 ) -> str | None:
-    """Return the timestamp_utc of the first bar at/after scan_time_et on
-    the requested ET trading date.
+    """Return the timestamp_utc of the first **regular-session** bar at/after
+    scan_time_et on the requested ET trading date.
 
-    v0.7.11: now requires the bar's ET date to equal `signal_date_et`. The
-    raw_bars query (storage.get_raw_bars_for_day) filters by UTC date, which
-    leaks in after-hours bars from the *previous* ET trading day (UTC 00:00
-    to ~05:00 = ET 19:00–00:00 of the prior day). Without an ET-date guard,
-    `_find_scan_bar_ts(bars, "10:30")` would match the first bar with
-    `et.hour >= 10` — which on a typical day is the previous day's 19:00 ET
-    after-hours bar appearing in the list at UTC 00:00. The simulator then
-    walked from that bar, fired the timestop on the next bar (also after-
-    hours, et.hour >= 16), and produced phantom-TIME exits with bogus
-    gross returns from after-hours price gaps.
+    v0.7.12: now also requires the matched bar to be in the regular ET
+    trading session (09:30-15:59 ET). Returns None if no such bar exists.
 
-    The fix is one line: also require `et.date() == signal_date_et`.
+    Why this guard exists: v0.7.11 fixed the storage layer so that
+    get_raw_bars_for_day returns bars where ET date matches — including
+    same-day after-hours bars at ET 19:00-23:59. On most (symbol, date)
+    pairs this is fine because regular-session bars are present and sort
+    earlier in UTC, so they're matched first. But on (symbol, date) pairs
+    where regular-session bars are MISSING from raw_bars (halted symbols,
+    partial backfills, cleanup-then-repopulate races), only the same-day
+    after-hours bars remain. Without an in-session guard, this function
+    would match the first AH bar (et.hour=19 satisfies any reasonable
+    scan_time target), the simulator would anchor entry to that bar, fire
+    the timestop on the next iteration (et.hour=19 > timestop_h=15), and
+    record a phantom-TIME exit with bogus gross P&L from after-hours price
+    differentials versus the research_rows-derived scan_price.
+
+    The fix is conservative: an entry bar must be in the regular ET
+    session, OR the signal is treated as NO_DATA. Pre-market and after-
+    hours bars never become entry candidates regardless of how late the
+    requested scan_time is.
+
+    v0.7.11: requires the bar's ET date to equal `signal_date_et` (defense
+    against the prior-day-AH leak that storage layer also fixed).
 
     `signal_date_et` defaults to None for backward compatibility with old
     callers/tests; in that mode we fall back to the legacy "first bar
-    at/after target hour anywhere in the list" behaviour. Production
-    `run_backtest` always passes the date.
+    at/after target hour anywhere in the list" behaviour BUT still apply
+    the regular-session guard. Production `run_backtest` always passes
+    the date.
 
     v0.7.8: switched from the month-boundary _utc_hour_to_et approximation
     to zoneinfo via _bar_ts_to_et.
@@ -794,6 +832,13 @@ def _find_scan_bar_ts(
             bdt = bdt.replace(tzinfo=timezone.utc)
         et = _bar_ts_to_et(bdt)
         if target_date is not None and et.date() != target_date:
+            continue
+        # v0.7.12: regular-session guard. Reject any bar outside ET 09:30-
+        # 15:59. Pre-market (< 09:30) and after-hours (>= 16:00) bars are
+        # never valid entry candidates for a regular-session scan signal.
+        if et.hour < 9 or et.hour >= 16:
+            continue
+        if et.hour == 9 and et.minute < 30:
             continue
         if et.hour > target_hh or (et.hour == target_hh and et.minute >= target_mm):
             return b["timestamp_utc"]

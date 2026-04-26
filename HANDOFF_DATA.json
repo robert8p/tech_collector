@@ -1,113 +1,181 @@
 {
-  "session_version_ending": "0.7.7",
-  "ui_version_expected": "0.7.7",
-  "phantom_time_bug": {
-    "status": "fixed in v0.7.1+",
-    "description": "_simulate_trade fallback took last bar close as TIME without re-scanning for missed TP/SL crossings. Produced stored returns outside bounds on big intraday moves.",
-    "canonical_example": {
-      "symbol": "IT",
-      "signal_date": "2026-02-03",
-      "entry_time_et": "10:30",
-      "entry_price": 157.165,
-      "stored_exit": {"reason": "TIME", "gross_bps": 3037},
-      "reference_exit": {"reason": "TP", "gross_bps": 82.56}
-    }
+  "_meta": {
+    "session_ending_version": "0.7.12",
+    "deployed_version_verified": "0.7.11",
+    "deployment_status_v0_7_12": "code complete, NOT yet deployed",
+    "timestamp_iso": "2026-04-26T13:30:00Z",
+    "smoke_tests_passing_locally": "74/74 on three network-independent files (backtest_audit=48, jobs=16, compute=10); smoke_sectors NOT yet re-run (212 expected, network-blocked in dev sandbox)",
+    "smoke_tests_expected_total_after_sectors_run": "286/286"
   },
-  "c_scaled_baseline_51db4f14": {
-    "run_uuid": "51db4f14-e757-40ef-8864-3504f3b25b26",
-    "stored_total_bps": 44641.46,
-    "reference_total_bps": 16648.84,
-    "contamination_bps": -31923.04,
-    "contamination_pct": 0.78,
-    "n_trades_audited": 1760,
-    "n_trades_usable": 1722,
-    "n_trades_no_data": 38,
-    "n_reason_mismatches": 586,
-    "n_suspect_time_exits": 481,
-    "n_invariant_violations": 0,
-    "exit_reason_transitions": {
-      "TP→TP": 903, "SL→SL": 263, "TIME→NO_DATA": 38,
-      "TIME→TP": 390, "TIME→SL": 149, "TIME→TIME": 8,
-      "TP→SL": 3, "SL→TP": 6
-    },
-    "audit_pack_filename": "backtest_audit_51db4f14_20260424T002754Z.zip"
+  "deployed_module_hashes_v0_7_12": {
+    "backtest.py": "488e94145778556de97f66775b58efcb43edcb6e4c171824ae514e0b14a8d4dc",
+    "feature_computer.py": "bf502226a72794a89a672b1945f853c97bb37b15f7c9f26ad6ae422c9245d286",
+    "api.py": "d4da08bd7cde44ba15f3ec41d7bf766a9463e0c9094e376d9ed948f559fdcd86",
+    "storage.py": "518419943186470bc916aec016884acec86fc3eeb5daebc52e4d89e7e7fbaba7",
+    "backtest_audit.py": "0fa3d887951873cc7f91275ac897de5f3bd014b4dfb9ff45715f1df356f2592b",
+    "jobs.py": "ddc29f8ceba0f590c6bed4bdb4e8bac8f44657f34bd41175572692df732176b2",
+    "__init__.py": "a2dd2bd25837990a9cd4ec12e5d219373c1069a4104b4edde69135bf6780a704",
+    "config.py": "6eb20e64f9c2ce8ce32444fe905229df113104156c83bb17edd7a7588107c2f4"
   },
-  "corrected_baseline_stats": {
-    "total_bps": 12613,
-    "avg_per_trade_bps": 7.3,
-    "win_rate_pct": 75.5,
-    "branches": {
-      "gap_open": {"n": 827, "total_bps": 8577, "avg_bps": 10.4, "tp_bps": 75, "sl_bps": 100, "position_size": 1.0},
-      "gap_filled_half": {"n": 895, "total_bps": 4036, "avg_bps": 4.5, "tp_bps": 50, "sl_bps": 150, "position_size": 0.5}
-    },
-    "quarterly": {
-      "Q1_Apr2024_Feb2025": {"total_bps": 3158, "avg_bps": 7.2},
-      "Q2_Feb2025_Apr2025": {"total_bps": 6270, "avg_bps": 14.9},
-      "Q3_Apr2025_Oct2025": {"total_bps": 217, "avg_bps": 0.5, "note": "near-zero edge for 6 months"},
-      "Q4_Feb2026_Apr2026": {"total_bps": 2967, "avg_bps": 6.9}
-    },
-    "branch_negative_quarters": {
-      "gap_open": ["Q3"],
-      "gap_filled_half": ["Q4"]
-    }
-  },
-  "filter_candidates_clean_data": {
-    "note": "All tested on train/test split at median date (Apr 2025). Negative deltas indicate filter loses P&L.",
-    "artifacts_of_buggy_data_do_not_use": [
-      {"filter": "dist_to_prev_close_bps > 100", "train_delta": -2897, "test_delta": -2413},
-      {"filter": "gap_pct > 0", "train_delta": -2961, "test_delta": -1334},
-      {"filter": "intraday_range_position > 0.8", "train_delta": -2011, "test_delta": -599}
-    ],
-    "survived_cleaning": [
-      {"filter": "spy_momentum <= 0", "train_delta": -1044, "test_delta": 1437, "note": "regime-specific, hurts train"},
-      {"filter": "spy_mom<=0 AND dist_prev_close<0", "train_delta": -60, "test_delta": 2063, "note": "strongest combo; near-flat train"},
-      {"filter": "exclude_MPWR", "delta_total": 332, "note": "persistent negative both years"},
-      {"filter": "exclude_MPWR_STX_CIEN", "delta_total": 1300, "note": "STX and CIEN only one-year negative"}
-    ],
-    "recommended_stack": {
-      "formula": "KEEP if ((symbol != MPWR) AND (spy_momentum > 0 OR dist_to_prev_close_bps >= 0))",
-      "drop_pct": 14.3,
-      "new_total_bps": 14497,
-      "improvement_bps": 1885,
-      "improvement_pct": 15,
-      "quarterly_deltas": {"Q1": 306, "Q2": -457, "Q3": 1663, "Q4": 372}
-    },
-    "regime_only_alternative": {
-      "formula": "KEEP if (spy_momentum > 0 OR dist_to_prev_close_bps >= 0)",
-      "drop_pct": 12.5,
-      "new_total_bps": 14616,
-      "improvement_bps": 2003,
-      "implementation": "feature regime_ok added in v0.7.7; use as predicate regime_ok == 1"
-    }
-  },
-  "compounded_returns_filter_A_plus_B": {
-    "note": "Sequential trade-level compounding. Overstates reality slightly because same-day trades don't actually compound.",
-    "N5_20pct_per_trade":  {"2yr_pct": 33.5, "annualized_pct": 15.5, "max_dd_pct": -4.3},
-    "N10_10pct_per_trade": {"2yr_pct": 15.6, "annualized_pct":  7.5, "max_dd_pct": -2.2},
-    "N15_6_7pct_per_trade":{"2yr_pct": 10.1, "annualized_pct":  4.9, "max_dd_pct": -1.5},
-    "N20_5pct_per_trade":  {"2yr_pct":  7.5, "annualized_pct":  3.7, "max_dd_pct": -1.1}
-  },
-  "trade_concurrency_distribution": {
-    "median_per_day": 2,
-    "mean_per_day": 4.4,
-    "p95_per_day": 13,
-    "max_per_day": 146,
-    "max_day_date": "2025-04-07",
-    "max_day_reason": "tariff-shock; rule fired on essentially the full IT sector"
-  },
-  "immediate_next_steps_after_v0_7_7_deploy": [
-    "Verify /info shows version 0.7.7",
-    "Recompute IT sector full range (regime_ok needs to populate)",
-    "Run baseline backtest: existing rule, timestop_et=15:50",
-    "Run +regime backtest: rule + regime_ok==1 predicate, timestop_et=15:50",
-    "Run +regime +no_timestop backtest: same rule, empty timestop",
-    "Compare (b) and (c) vs (a); verify (b) matches predicted +2000 bps improvement",
-    "Optionally: click repair on 51db4f14 to make corrected baseline durable in prod DB"
+  "modules_changed_in_v0_7_12": [
+    "backtest.py (regular-session guard in _find_scan_bar_ts; main-loop TIME-exit invariant in _simulate_trade)",
+    "api.py (new GET /raw-bars/coverage endpoint; updated /info endpoint listing)",
+    "__init__.py (version bump to 0.7.12)",
+    "config.py (APP_VERSION bump to 0.7.12)"
   ],
-  "open_design_questions": [
-    "Daily signal cap implementation (the April 7 2025 146-signal day is a real tail-risk)",
-    "38 NO_DATA trades: recover via re-backfill on specific dates",
-    "Q3 2025 edge collapse: structural? regime? needs investigation",
-    "Re-validate rule variants (C-scaled vs C-simple vs 75bps-alone vs 50bps-alone) on clean data"
+  "ah_bar_phantom_bug_root_cause": {
+    "location": "tech_collector/backtest.py::_find_scan_bar_ts (selection layer); compounded by missing main-loop TIME-exit invariant in _simulate_trade",
+    "bug": "When raw_bars for a (symbol, ET-date) contained ONLY same-day after-hours bars (regular-session bars missing), _find_scan_bar_ts returned the first AH bar's UTC ts because et.hour=19 satisfied any reasonable scan_time and et.date matched signal_date. _simulate_trade then anchored entry on that AH bar; first iteration of main loop fired timestop (et.hour=19 > 15), recording a phantom-TIME exit with bogus gross from AH-vs-research-scan-price gap.",
+    "downstream_effect": "14 phantom rows out of 2058 in the v0.7.11 (a) baseline. Concentrated on SMCI (×7), PLTR (×5), LITE, APP. Gross out of invariant band ([-876.6, +864.2] vs allowed [-157.5, +82.5]).",
+    "introduced": "Existed in nascent form pre-v0.7.11 but was masked by the storage-layer UTC-date filter that dropped same-day AH bars. v0.7.11 correctly began including those bars, exposing the bar-selection vulnerability.",
+    "fixed_in": "v0.7.12",
+    "fix_summary": "Two-part: (1) _find_scan_bar_ts requires matched bar's ET time to be in regular session (09:30-15:59). Returns None for AH-only or pre-market-only bar lists; run_backtest emits NO_DATA. (2) _simulate_trade's main-loop TIME exit applies the same [-sl_level, +tp_level] invariant the fallback path already had — defense-in-depth against any future regression at the bar-selection layer.",
+    "regression_tests": [
+      "tests/smoke_backtest_audit.py::test_v0712_find_scan_bar_ts_rejects_after_hours",
+      "tests/smoke_backtest_audit.py::test_v0712_find_scan_bar_ts_rejects_pre_market",
+      "tests/smoke_backtest_audit.py::test_v0712_find_scan_bar_ts_accepts_regular_session",
+      "tests/smoke_backtest_audit.py::test_v0712_find_scan_bar_ts_skips_AH_finds_regular",
+      "tests/smoke_backtest_audit.py::test_v0712_simulate_trade_main_loop_invariant_fires",
+      "tests/smoke_backtest_audit.py::test_v0712_run_backtest_AH_only_yields_NO_DATA"
+    ]
+  },
+  "diagnostic_endpoints": {
+    "GET /source-version": {
+      "description": "Public, no auth. Returns SHA256 hash and file path for backtest, feature_computer, api, storage, backtest_audit. Compare to deployed_module_hashes_v0_7_12 to verify deploy.",
+      "added_in": "v0.7.9"
+    },
+    "GET /backtest/engine-selftest": {
+      "description": "Public, no auth. Runs three canonical scenarios (TP-then-moon, invariant-fires, DST-correctness) hitting _simulate_trade directly. Returns all_pass.",
+      "added_in": "v0.7.9",
+      "limitation": "Does NOT cover storage layer or _find_scan_bar_ts AH-guard end-to-end. Don't trust as sole verification."
+    },
+    "GET /raw-bars/coverage": {
+      "description": "Public, no auth. Query: ?symbol=X&date=YYYY-MM-DD. Returns bar-coverage breakdown for one (symbol, ET trading date) pair: {n_pre_market, n_regular_session, n_after_hours, first_bar_et, last_bar_et, phantom_risk}. phantom_risk=true when n_regular_session==0 and n_after_hours>0 — the exact failure mode v0.7.12 now correctly handles.",
+      "added_in": "v0.7.12",
+      "intended_use_post_deploy": "Confirm the missing-regular-session hypothesis on real production data: GET /raw-bars/coverage?symbol=SMCI&date=2024-11-14 should return phantom_risk=true. If it doesn't, the v0.7.12 hypothesis is wrong and we need to investigate further before re-running (a)."
+    }
+  },
+  "v0_7_11_a_baseline_contamination_summary": {
+    "run_uuid": "77416b6d-484c-4183-a8ca-310f42cf5926",
+    "version": "0.7.11",
+    "n_trades_total": 2058,
+    "n_phantom_rows": 14,
+    "phantom_pct": 0.68,
+    "phantom_signature": "exit_time_et=='19:00' (or 19:01), exit_reason=='TIME', minutes_held==0, gross outside [-157.5, +82.5]",
+    "phantom_gross_range": [-876.65, 864.15],
+    "phantom_symbol_concentration": {"SMCI": 7, "PLTR": 5, "LITE": 1, "APP": 1},
+    "phantom_date_distribution": {
+      "2024-11-14": 2,
+      "2024-11-19": 1,
+      "2024-12-03": 1,
+      "2024-12-12": 1,
+      "2025-01-23": 1,
+      "2025-02-06": 1,
+      "2025-02-11": 2,
+      "2025-02-19": 1,
+      "2025-02-27": 1,
+      "2025-03-04": 2,
+      "2025-03-06": 1
+    },
+    "totals_at_face_value_DO_NOT_USE": {
+      "sum_net_raw_bps": -129.4,
+      "sum_net_size_weighted_bps": -393.8,
+      "sum_gross_raw_bps": 31293.1,
+      "sum_gross_size_weighted_bps": 23543.2
+    },
+    "totals_minus_phantoms_for_shape_only_NOT_BASELINE": {
+      "sum_net_raw_bps": 749.3,
+      "sum_net_size_weighted_bps": 501.1,
+      "exit_breakdown": {"TP": 1411, "SL": 603, "TIME": 30}
+    },
+    "explanation": "These shape numbers are NOT the v0.7.12 baseline. Re-run (a) on v0.7.12 to get the honest baseline. The 14 phantom rows will become NO_DATA (gross=0, no contribution to net), so totals will match the 'minus phantoms' figures within rounding — but methodologically the run must come from clean code, not from post-hoc filtering of contaminated output."
+  },
+  "next_action_immediate": {
+    "step": "Deploy v0.7.12, verify hashes + /raw-bars/coverage on a known phantom-source pair, then re-run (a) baseline backtest",
+    "pre_deploy_checklist": [
+      "python3 -m tests.smoke_sectors → expect 212/212 (the only smoke not verified in dev sandbox due to network)",
+      "python3 -m tests.smoke_backtest_audit → expect 48/48 (verified)",
+      "python3 -m tests.smoke_compute → expect 10/10 (verified)",
+      "python3 -m tests.smoke_jobs → expect 16/16 (verified)"
+    ],
+    "post_deploy_verification": [
+      "GET /info → version == 0.7.12",
+      "GET /source-version → backtest.py/api.py/__init__.py/config.py hashes match deployed_module_hashes_v0_7_12",
+      "GET /backtest/engine-selftest → all_pass: true",
+      "GET /raw-bars/coverage?symbol=SMCI&date=2024-11-14 → phantom_risk: true, n_regular_session: 0, n_after_hours: > 0"
+    ],
+    "rule_json": {
+      "id": "it-50-mom-vol-2way-atr5-v0.7.12-baseline",
+      "sector": "Information Technology",
+      "target": "target_peak_75bps",
+      "predicates": [
+        {"feature": "momentum", "op": ">", "value": 0.002},
+        {"feature": "rel_volume_r2k", "op": ">", "value": 1.2},
+        {"feature": "atr_reach", "op": "<", "value": 5.0}
+      ]
+    },
+    "form_settings": {
+      "tp_bps": 50,
+      "sl_bps": 150,
+      "timestop_et": "15:50",
+      "slippage_bps": 15,
+      "spy_regime_filter": null,
+      "symbol_exclude": null,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17"
+    },
+    "conditional_exits": [
+      {"feature": "gap_filled", "op": "==", "value": 0,
+       "tp_bps": 75, "sl_bps": 100, "position_size": 1.0, "label": "gap_open"},
+      {"feature": "gap_filled", "op": "==", "value": 1,
+       "tp_bps": 50, "sl_bps": 150, "position_size": 0.5, "label": "gap_filled_half"}
+    ],
+    "expected_n_trades": "~2055 minus NO_DATA count (which should be ~14)",
+    "expected_total_pnl_bps_range": "Best educated guess: near +500 to +800 bps net, but treat run output as authoritative. The 'v0.7.11 minus phantoms' figures (+501 to +749) are NOT the baseline — they come from contaminated code post-hoc filtered."
+  },
+  "validation_checklist_for_a_csv_v0_7_12": [
+    "exit_time_et column: every value must be 09:30-15:59 ET. Any '19:xx' = engine still broken (STOP).",
+    "minutes_held: TIME exits must be > 0, max ~320. minutes_held==0 is fine ONLY for TP exits where exit_time_et==signal_time_et (same-bar TP fill).",
+    "gross_return_bps: must be in [-160, +90]. Branch gap_open: ~[-107, +82.5]. Branch gap_filled_half: ~[-157.5, +57.5].",
+    "exit_reason==NO_DATA count: expected ~14. If >50, the session guard may be too aggressive; investigate.",
+    "Trade count: ~2055 total trade rows; ~2040 valid exits (rest NO_DATA).",
+    "Net P&L total: in [-3000, +12000] bps range (broad guess)."
+  ],
+  "discarded_data": {
+    "reason": "All produced by backtest engine missing the v0.7.12 _find_scan_bar_ts session guard. Even if a particular run's specific (symbol, date) pairs happened to all have regular-session bars present, the engine itself was vulnerable, so all pre-v0.7.12 backtest output is suspect and must be re-run on v0.7.12.",
+    "discarded_artifacts": [
+      "run_uuid 77416b6d (v0.7.11 (a) baseline, 14 phantom rows confirmed)",
+      "run_uuid 6ce332aa (v0.7.11 single-day diagnostic — happened to be clean but still pre-v0.7.12)",
+      "run_uuid 51db4f14 and all derived analyses (the C-scaled baseline, audit/repair, +12613 bps figure, +14616 bps post-regime, per-quarter breakdowns, MPWR/STX/CIEN persistent-loser finding, 1/N projections, all filter recommendations including regime_ok/dist_to_prev_close/gap_pct)",
+      "All backtest CSVs uploaded prior to v0.7.12 deploy"
+    ]
+  },
+  "rob_working_style": {
+    "tone": "Direct, evidence-driven, low patience for repeated mistakes",
+    "preferences": [
+      "Step-by-step instructions when asked",
+      "Reproducer tests before deploys",
+      "No half-measures, no hacks",
+      "Trust him when he flags something as broken",
+      "Render-only deployment, no shell access, no SQL access beyond API endpoints"
+    ],
+    "exhausted_patience_for": [
+      "Trial and error",
+      "New theories without verification",
+      "Re-explanation of context he already knows"
+    ]
+  },
+  "open_backlog": [
+    {"priority": 1, "item": "Pre-deploy: run smoke_sectors locally (212 expected)", "status": "ready"},
+    {"priority": 2, "item": "Deploy v0.7.12 to Render", "status": "blocked-on-1"},
+    {"priority": 3, "item": "Post-deploy: verify hashes + /raw-bars/coverage on SMCI 2024-11-14", "status": "blocked-on-2"},
+    {"priority": 4, "item": "Re-run (a) full-range baseline on v0.7.12", "status": "blocked-on-3"},
+    {"priority": 5, "item": "Validate (a) CSV (spot-check + NO_DATA count)", "status": "blocked-on-4"},
+    {"priority": 6, "item": "Per-quarter/symbol/branch/feature analysis on (a)", "status": "blocked-on-5"},
+    {"priority": 7, "item": "Run (b) with regime_ok==1 predicate", "status": "blocked-on-6"},
+    {"priority": 8, "item": "Run (c) with regime_ok==1 + no timestop", "status": "blocked-on-7"},
+    {"priority": 9, "item": "Daily signal cap (April 7 2025 = 146 simultaneous signals)", "status": "deferred"},
+    {"priority": 10, "item": "Re-audit historical runs (audit infra not v0.7.12-verified, see backlog note 7 in briefing)", "status": "deferred"},
+    {"priority": 11, "item": "UI version display ('v–' issue)", "status": "deferred"}
   ]
 }

@@ -318,6 +318,7 @@ def info():
             "health": "GET /health",
             "info": "GET /info",
             "source-version": "GET /source-version  (v0.7.9, deploy verification)",
+            "raw-bars-coverage": "GET /raw-bars/coverage?symbol=X&date=YYYY-MM-DD  (v0.7.12, missing-bars diagnostic)",
             "sectors": "GET /sectors",
             "sector-status": "GET /sector-status",
             "backfill": "POST /backfill  (async, returns job_id)",
@@ -1227,6 +1228,81 @@ def backtest_engine_selftest():
         s.get("passes", False) for s in out["scenarios"].values()
     )
     return out
+
+
+@app.get("/raw-bars/coverage")
+def raw_bars_coverage(symbol: str, date: str):
+    """v0.7.12: report bar-coverage breakdown for one (symbol, ET trading
+    date) pair from the deployed raw_bars table.
+
+    Returns counts of bars in pre-market (before 09:30 ET), regular session
+    (09:30-15:59 ET), and after-hours (16:00 onward), plus the first/last
+    bar timestamps in ET. Designed to diagnose the "regular session bars
+    missing from raw_bars" condition that drove the v0.7.12 phantom hits:
+    a (symbol, date) where n_regular_session == 0 but n_after_hours > 0
+    is the exact failure mode, and the v0.7.12 _find_scan_bar_ts session
+    guard now converts those signals to NO_DATA instead of phantom-TIME.
+
+    Query: ?symbol=SMCI&date=2024-11-14
+
+    Auth: public; this is read-only metadata, no PII, no risk.
+    """
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    ET = ZoneInfo("America/New_York")
+
+    # Validate date format
+    try:
+        datetime.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"date must be YYYY-MM-DD, got {date!r}",
+        )
+    if not symbol or not isinstance(symbol, str):
+        raise HTTPException(status_code=400, detail="symbol is required")
+    sym = symbol.strip().upper()
+
+    with storage.connect(config.DB_PATH) as conn:
+        bars = storage.get_raw_bars_for_day(conn, sym, date)
+
+    n_pre_market = 0
+    n_regular_session = 0
+    n_after_hours = 0
+    first_et = None
+    last_et = None
+    for b in bars:
+        ts = b["timestamp_utc"]
+        try:
+            bdt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        et = bdt.astimezone(ET)
+        et_str = et.strftime("%Y-%m-%d %H:%M ET")
+        if first_et is None:
+            first_et = et_str
+        last_et = et_str
+        if et.hour < 9 or (et.hour == 9 and et.minute < 30):
+            n_pre_market += 1
+        elif et.hour < 16:
+            n_regular_session += 1
+        else:
+            n_after_hours += 1
+
+    return {
+        "symbol": sym,
+        "date_et": date,
+        "n_total": len(bars),
+        "n_pre_market": n_pre_market,
+        "n_regular_session": n_regular_session,
+        "n_after_hours": n_after_hours,
+        "first_bar_et": first_et,
+        "last_bar_et": last_et,
+        "phantom_risk": (
+            n_regular_session == 0 and n_after_hours > 0
+        ),
+        "version": config.APP_VERSION,
+    }
 
 
 @app.post("/backtest/run", dependencies=[Depends(_require_api_key)])

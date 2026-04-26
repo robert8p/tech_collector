@@ -1,307 +1,227 @@
-# Tech Collector — Handoff Briefing (as of v0.7.7)
+# Tech Collector — Handoff Briefing (v0.7.12, post-AH-bar-guard)
 
-**For:** new Claude chat continuing this work with Rob
-**Purpose:** preserve complete context so development continues seamlessly
-**Last session ended:** v0.7.7 packaged and delivered, awaiting deployment
+**For:** the next Claude chat continuing this work with Rob
+**Last session:** v0.7.11 baseline (a) backtest produced 14 phantom rows out of 2058 (0.68%) — same `exit_time_et=19:00 / minutes_held=0` signature as the prior phantom bug. Root cause traced to `_find_scan_bar_ts` accepting after-hours bars when regular-session bars are missing from `raw_bars`. v0.7.12 fixes this with two complementary guards. Code is complete and 74/74 verified locally on the three network-independent smoke files; deployment + sector smoke verification + (a) re-run is the next step.
+**Critical state:** v0.7.12 is NOT yet deployed. The (a) baseline needs to be re-run from scratch on v0.7.12. The v0.7.11 (a) CSV (`run_uuid 77416b6d`) is contaminated and discarded.
 
 ---
 
-## Who Rob is and how he works
+## What you absolutely must read first
 
-Rob is a solo developer building personal discretionary trading tools, primarily in Python. His workflow pairs ChatGPT (main dev partner) with Claude (independent external reviewer and occasional direct implementer). He feeds outputs between the two.
+1. **The v0.7.11 (a) baseline was contaminated.** 14 phantom trades out of 2058 (0.68%) carry the canonical phantom signature: `exit_time_et == "19:00"` (or 19:01), `exit_reason == "TIME"`, `minutes_held == 0`, and gross outside the invariant band ([-876.6, +864.2] vs. allowed [-157.5, +82.5]). Symbol concentration: SMCI ×7, PLTR ×5, LITE ×1, APP ×1. All on dates with known data anomalies (SMCI's Nov 2024 – Mar 2025 halt/delisting saga; PLTR Mar 4 2025 had phantoms on both 10:30 and 11:30 signals same day).
 
-**Rob's explicit working style directives — do not forget these:**
+2. **The bug — and why v0.7.11 didn't catch it:** v0.7.11 correctly fixed `storage.get_raw_bars_for_day` to return bars for one ET trading date including same-day after-hours (ET 19:00–23:59). For most (symbol, date) pairs, regular-session bars sort earlier in UTC and `_find_scan_bar_ts` matches them first — fine. **But for (symbol, date) pairs where regular-session bars are MISSING from `raw_bars`** (likely cause: halted-symbol partial pulls or cleanup-then-repopulate races), only same-day AH bars remained. `_find_scan_bar_ts` then matched the first AH bar (et.hour=19 satisfies any reasonable scan_time, et.date matches signal_date), simulator anchored entry there, fired timestop on the first iteration (et.hour=19 > timestop_h=15), and recorded a phantom-TIME exit with bogus gross from the AH-vs-research-scan-price gap. **This bug is a sibling of the v0.7.11 bug, exposed by the v0.7.11 fix correctly including same-day AH bars that used to be silently dropped.**
+
+3. **Fix shipped in v0.7.12 (code complete, NOT yet deployed):**
+   - **Primary:** `_find_scan_bar_ts` now requires the matched bar to be in regular ET session (09:30–15:59). Returns None for AH-only or pre-market-only bar lists. `run_backtest`'s existing None-handler emits a `NO_DATA` trade for these signals — no contamination.
+   - **Defense-in-depth:** `_simulate_trade`'s main-loop TIME exit (line ~250) now applies the same `[-sl_level, +tp_level]` invariant the fallback path on line ~352 already had. If anything ever lets an AH bar through `_find_scan_bar_ts` again, the simulator raises an AssertionError loudly instead of silently writing a contaminated trade. Message points at the session guard.
+   - **New diagnostic:** `GET /raw-bars/coverage?symbol=X&date=YYYY-MM-DD` returns `{n_pre_market, n_regular_session, n_after_hours, first_bar_et, last_bar_et, phantom_risk}`. Lets us confirm/refute the missing-regular-session hypothesis directly on the deployed DB without a code change.
+
+4. **Earlier "fixes" weren't wrong, just incomplete.** v0.7.1 (engine invariant fallback), v0.7.8 (zoneinfo / `_utc_hour_to_et` removal), v0.7.11 (storage UTC→ET range + `_find_scan_bar_ts` ET-date guard), v0.7.12 (`_find_scan_bar_ts` session guard + main-loop invariant). Each addressed a real defect; together they form the full closure of the phantom-TIME failure class. v0.7.12 was specifically required because the v0.7.11 fix legitimately included same-day AH bars in the bar list, exposing a bar-selection vulnerability that pre-v0.7.11 was masked by the storage layer dropping those bars.
+
+5. **Diagnostic endpoints (v0.7.9+ kept; v0.7.12 added one).**
+   - `GET /source-version` — SHA256 hashes of loaded modules + paths. Compare to `HANDOFF_DATA.json` after deploy.
+   - `GET /backtest/engine-selftest` — three canonical scenarios hitting `_simulate_trade` directly. Still does NOT cover storage layer or `_find_scan_bar_ts` end-to-end. Don't trust as sole verification of the v0.7.12 fix; the `smoke_backtest_audit` E2E test (`test_v0712_run_backtest_AH_only_yields_NO_DATA`) is the authoritative regression coverage.
+   - `GET /raw-bars/coverage?symbol=...&date=...` — v0.7.12, pinpoints which (symbol, date) pairs are at phantom risk.
+
+---
+
+## Rob's working style — preserve absolutely
+
 - **"We only do things properly."** No half-measures. No hacks.
-- **"This trial and error is not acceptable."** Ship fixes that have been reasoned through, not iterated through deploys. Verify locally before packaging.
-- **No manual work — automate as much as possible.** If something can be tested in smoke, add the test. If something can be a one-click UI operation, make it one.
-- **Thorough review before next artifact.** When he pushes back with this phrase, stop shipping and investigate properly.
-- **Blunt evidence-driven assessment.** He's comfortable with being told the strategy is weaker than hoped. Don't hedge.
-
-**Skepticism vectors he already has, unprompted:**
-- Infrastructure-over-signal patterns (diagnostic code growing faster than the core)
-- Data contamination masking real behaviour
-- Process progress mistaken for product progress
-- Stories written for results that don't survive cleaning
-
-**When Rob says something is broken:** trust him, investigate, don't defend. Multiple times this session I wasted his time with reassurances; the pattern now is always "open browser devtools / check logs / examine data, don't speculate."
+- **"Trial and error is not acceptable."** Reason a fix through to completion locally with reproducer tests BEFORE asking him to deploy.
+- **No manual work — automate as much as possible.**
+- **Step-by-step instructions when he asks.** Exact UI clicks and form values, not abstract advice.
+- **Blunt evidence-driven assessment.** Tell him when results are bad. Don't sugar-coat.
+- **Trust him when he says something's broken.** Investigate, don't reassure.
+- **Render-only deployment.** Every fix requires a deploy. Verify locally with reproducer tests first.
+- **No shell/SSH/SQL access** to Render beyond what the API exposes. Diagnostics come through HTTP endpoints.
 
 ---
 
-## The project: tech-collector
+## Current state of the deployed system
 
-A FastAPI web application deployed on Render that:
-1. Backfills 1-minute bar data from Alpaca for S&P 500 sector-restricted universes
-2. Computes scan-time features and writes `research_rows` (one per symbol/date/scan_time)
-3. Lets Rob define filter rules (predicate lists over features) and tests them
-4. Runs backtests that simulate trades based on rule-matched signals and stores results
-5. Audits/repairs buggy runs (added in v0.7.1 after a critical phantom-TIME bug was caught)
-
-**Sector focus:** Primarily Information Technology (~75 symbols, 2 years of data Apr 2024 — Apr 2026). Also exists for Financials and R2K but those aren't our focus right now.
-
-**Local workspace:** `/home/claude/tech_collector_work/`
-**Deployed on:** Render Pro Plus
-**DB:** SQLite at `/var/data/tech_collector.db` on Render, `config.DB_PATH` locally
+- **Render service:** `tech-collector.onrender.com`. Version reports `0.7.11` via `/info` until v0.7.12 is deployed.
+- **DB:** SQLite at `/var/data/tech_collector.db`
+- **Sector:** Information Technology, ~75 symbols, 2 years (Apr 2024 → Apr 2026)
+- **`research_rows`:** Computed on v0.7.8/v0.7.10 with `regime_ok` populated. ~95k+ rows. Date range 2024-04-22 → 2026-04-17ish. Unaffected by v0.7.12 — no recompute needed.
+- **`raw_bars`:** Populated for IT sector + SPY across the same range. Contains after-hours bars. **Some (symbol, date) pairs are missing regular-session bars** — that's the structural condition v0.7.12 now correctly handles. Use `/raw-bars/coverage` after deploy to enumerate which ones.
+- **`backtest_runs`:** All pre-v0.7.12 runs are contaminated (including the v0.7.11-era `6ce332aa` single-day diagnostic, which happened to hit a non-affected day so produced clean output, and the (a) baseline `77416b6d` which carries 14 phantoms). Don't analyze any pre-v0.7.12 run.
+- **`bt_jobs`:** SQLite-backed. Orphan-sweep on startup gated by `sweep_orphaned=True` (fires once per process restart).
 
 ---
 
-## The bug that shaped recent sessions (critical context)
+## What's in v0.7.12 (code complete, awaiting deploy)
 
-In backtest engine v0.7.0, `_simulate_trade` had a **phantom-TIME-exit bug**. When a trade's bar iteration ended without a TP/SL match, the fallback took the last bar's close as a "TIME" exit *without re-scanning for missed crossings*. On big intraday moves, this produced stored returns like +3037 bps (30%) that were marked as TIME, well outside the TP/SL bounds.
+1. **`_find_scan_bar_ts` regular-session guard** — rejects `et.hour < 9`, `(et.hour == 9 and et.minute < 30)`, or `et.hour >= 16`. Returns None if no in-session bar matches.
+2. **`_simulate_trade` main-loop TIME-exit invariant** — same `[-sl_level, +tp_level]` (1 bp tol) check the fallback path has. Raises AssertionError on violation.
+3. **`GET /raw-bars/coverage`** — new diagnostic endpoint returning bar-coverage breakdown for (symbol, ET date).
+4. **6 new regression tests** in `smoke_backtest_audit.py`:
+   - `test_v0712_find_scan_bar_ts_rejects_after_hours`
+   - `test_v0712_find_scan_bar_ts_rejects_pre_market`
+   - `test_v0712_find_scan_bar_ts_accepts_regular_session`
+   - `test_v0712_find_scan_bar_ts_skips_AH_finds_regular`
+   - `test_v0712_simulate_trade_main_loop_invariant_fires`
+   - `test_v0712_run_backtest_AH_only_yields_NO_DATA`
+5. **All v0.7.11 engine fixes preserved** — phantom-TIME invariant on fallback (v0.7.1), zoneinfo-based ET conversion (v0.7.8), `_utc_hour_to_et` trap (v0.7.8), storage layer ET-date filtering (v0.7.11), `_find_scan_bar_ts` ET-date guard (v0.7.11).
+6. **Compute optimization preserved** — bars cache + chunked compute (v0.7.8/v0.7.10).
+7. **Job system fixes preserved** — SQLite-backed jobs (v0.7.6), gated orphan sweep (v0.7.10).
 
-**The specific production case we uncovered:** IT on 2026-02-03, entry 10:30 ET at $157.165, stock rallied to $201.84 (+30%) by 15:30, stored as TIME/+3037 bps. This was impossible — the stock crossed TP (+75 bps) within minutes of entry.
+**Local module hashes (compare against deployed `/source-version` after deploy):**
+- `backtest.py`: `488e94145778556de97f66775b58efcb43edcb6e4c171824ae514e0b14a8d4dc` ← changed
+- `feature_computer.py`: `bf502226a72794a89a672b1945f853c97bb37b15f7c9f26ad6ae422c9245d286` (unchanged)
+- `api.py`: `d4da08bd7cde44ba15f3ec41d7bf766a9463e0c9094e376d9ed948f559fdcd86` ← changed
+- `storage.py`: `518419943186470bc916aec016884acec86fc3eeb5daebc52e4d89e7e7fbaba7` (unchanged)
+- `backtest_audit.py`: `0fa3d887951873cc7f91275ac897de5f3bd014b4dfb9ff45715f1df356f2592b` (unchanged)
+- `jobs.py`: `ddc29f8ceba0f590c6bed4bdb4e8bac8f44657f34bd41175572692df732176b2` (unchanged)
+- `__init__.py`: `a2dd2bd25837990a9cd4ec12e5d219373c1069a4104b4edde69135bf6780a704` ← changed (version)
+- `config.py`: `6eb20e64f9c2ce8ce32444fe905229df113104156c83bb17edd7a7588107c2f4` ← changed (version)
 
-**Impact of the bug on the C-scaled baseline (run_uuid `51db4f14`):**
-- 1,760 trades; 586 reason-mismatches (33%); 481 suspect TIME exits
-- **Stored total P&L: +44,641 bps. Reference-computed total: +16,649 bps. Contamination: -31,923 bps (78% of baseline was phantom.)**
-- Zero invariant violations after fix
-- Transitions: TP→TP 903, SL→SL 263, TIME→TP 390, TIME→SL 149, TIME→TIME 8, TIME→NO_DATA 38, TP↔SL swaps 9
+If `/source-version` returns different values for `backtest.py`, `api.py`, `__init__.py`, or `config.py` after deploy, the deploy mechanism failed silently. Debug that BEFORE running anything.
 
-**The fix (v0.7.1+):**
-- Replaced approximate `_utc_hour_to_et` with `zoneinfo`-backed conversion (handles DST)
-- End-of-bars fallback scans the full bar list for TP/SL crossings before declaring TIME
-- Added invariant: TIME-exit gross must be within `[-sl_level, +tp_level]`. Violation raises `AssertionError` loudly.
-- Built audit/repair pipeline so existing stored runs could be verified against the canonical reference simulator.
+**Smoke totals (verified locally):**
+- `smoke_backtest_audit`: **48/48 passed** (was 38; +10 new assertions across 6 v0.7.12 tests)
+- `smoke_compute`: **10/10 passed**
+- `smoke_jobs`: **16/16 passed**
+- `smoke_sectors`: **NOT YET RE-RUN.** Was 212/212 on v0.7.11. v0.7.12 changes don't touch the sectors-pipeline code path; only the hardcoded version-string check in three places was bumped from 0.7.11 → 0.7.12. **Rob: please run `python3 -m tests.smoke_sectors` locally before deploying** to confirm. If fewer than 212 pass, stop and investigate.
 
-**Status today:** the bug is fixed in the engine, the audit has run successfully on the baseline, and the results above are the clean numbers to work with.
-
----
-
-## The clean baseline (what we actually know works)
-
-**C-scaled strategy**, ~2 years of IT signal data, corrected outcomes:
-
-| metric | value |
-|---|---|
-| total P&L | +12,613 bps |
-| avg per trade | +7.3 bps |
-| win rate | 75.5% |
-| trades usable | 1,722 of 1,760 (38 NO_DATA excluded) |
-
-**Per-branch (C-scaled is a two-branch strategy):**
-- `gap_open` (TP75/SL100 at position_size=1.0): n=827, +8,577 bps, avg +10.4 bps/trade
-- `gap_filled_half` (TP50/SL150 at position_size=0.5): n=895, +4,036 bps, avg +4.5 bps/trade
-
-**Per-quarter (reveals significant instability):**
-| quarter | period | total | avg/trade | notes |
-|---|---|---|---|---|
-| Q1 | Apr 2024 – Feb 2025 | +3,158 | +7.2 | ok |
-| Q2 | Feb – Apr 2025 | +6,270 | +14.9 | strong |
-| Q3 | Apr – Oct 2025 | +217 | +0.5 | **near-zero for 6 months** |
-| Q4 | Feb – Apr 2026 | +2,967 | +6.9 | recovered |
-
-**Branch-level fragility:** `gap_open` is negative in Q3 (-201 bps); `gap_filled_half` is negative in Q4 (-824 bps). Neither branch is consistently positive across all 4 quarters. Aggregate edge comes from decorrelated branches, not two independently robust edges.
-
-**Sobering implications:**
-- Year 2 edge (+3.5 bps/trade) is materially weaker than Year 1 (+11.3 bps/trade)
-- Most prior "predictive" filters from buggy-data analysis collapsed when outcomes were corrected — they were detecting the phantom-TIME pattern itself, not real edge
-- Published backtest numbers from earlier versions are inflated by the phantom bug
+Expected total: **286/286** when smoke_sectors is re-run.
 
 ---
 
-## Rule analysis — what survived on clean data
+## Current state of work — RESUME HERE
 
-**Filters that turned out to be artifacts:**
-- `dist_to_prev_close_bps > 100` (the old "best filter"): drops 37% of train, reduces P&L both train and test
-- `gap_pct > 0`: reduces P&L both
-- `intraday_range_position > 0.8`: marginal drag
-- `new_highs_in_sector >= 5`: near-neutral
+**Immediately next step:** Rob deploys v0.7.12, verifies `/source-version` matches the four changed hashes above, then re-runs the full-range (a) baseline. Same form settings as before.
 
-**Filters that survived on clean data:**
+### Pre-deploy checklist
 
-| filter | train delta | test delta | notes |
-|---|---|---|---|
-| `spy_momentum <= 0` | -1,044 | +1,437 | regime-specific |
-| `spy_mom<=0 AND dist_prev_close<0` | -60 | +2,063 | strongest combo |
-| Exclude MPWR | +332 | — | one persistently-negative symbol (neg both years) |
-| Exclude MPWR+STX+CIEN | +1,300 | — | STX/CIEN one-year negative each |
+1. Unzip v0.7.12 locally, run `python3 -m tests.smoke_sectors` → expect 212/212.
+2. Run `python3 -m tests.smoke_backtest_audit` → expect 48/48.
+3. Run `python3 -m tests.smoke_compute` → expect 10/10.
+4. Run `python3 -m tests.smoke_jobs` → expect 16/16.
+5. If all four green → deploy to Render.
 
-**Recommended filter stack (stable across 3 of 4 quarters):**
-`KEEP if ((symbol != MPWR) AND (spy_momentum > 0 OR dist_to_prev_close_bps >= 0))`
+### Post-deploy verification (before backtest)
 
-- Drops 14.3% of trades
-- P&L improvement: +12,613 → +14,497 bps (+15%)
-- Per-quarter delta: Q1 +306, Q2 -457, Q3 +1,663, Q4 +372
+1. `GET /info` → expect `"version": "0.7.12"`.
+2. `GET /source-version` → confirm `backtest.py`, `api.py`, `__init__.py`, `config.py` hashes match the four "changed" hashes above.
+3. `GET /backtest/engine-selftest` → expect `all_pass: true` (still doesn't exercise v0.7.12 path; just confirms v0.7.8 invariants intact).
+4. `GET /raw-bars/coverage?symbol=SMCI&date=2024-11-14` → expect `phantom_risk: true`, `n_regular_session: 0`, `n_after_hours: >0`. **This confirms the v0.7.12 hypothesis on real production data.** If `n_regular_session > 0` for that pair, the missing-bars hypothesis is wrong and we need to investigate further before the (a) re-run.
 
-**Alternative (regime-only, simpler):**
-Just `KEEP if (spy_momentum > 0 OR dist_to_prev_close_bps >= 0)`.
-- Drops 12.5%
-- P&L: +12,613 → +14,616 bps (+16%)
+### Backtest (a) settings — ready to paste (unchanged from v0.7.11)
 
-Slightly better than the combined version because symbol-exclusion overlaps with regime-exclusion (MPWR's bad trades mostly occur in bad regimes too).
+**Rule JSON:**
 
----
+```json
+{
+  "id": "it-50-mom-vol-2way-atr5-v0.7.12-baseline",
+  "sector": "Information Technology",
+  "target": "target_peak_75bps",
+  "predicates": [
+    {"feature": "momentum", "op": ">", "value": 0.002},
+    {"feature": "rel_volume_r2k", "op": ">", "value": 1.2},
+    {"feature": "atr_reach", "op": "<", "value": 5.0}
+  ]
+}
+```
 
-## 1/N compounded returns (what Rob asked about last)
+**Form fields:**
+- TP (BPS): `50`
+- SL (BPS): `150`
+- TIMESTOP (ET): `15:50`
+- SLIPPAGE (BPS): `15`
+- SPY REGIME FILTER: empty
+- SYMBOL EXCLUDE: empty
+- START DATE: `24/04/2024` (2024-04-22 in ISO)
+- END DATE: `17/04/2026`
 
-Using the **Filter A+B** (MPWR exclusion + regime filter) on corrected data:
+**Conditional exits (C-scaled two-branch):**
 
-| N (concurrent slots) | per-trade size | 2-year compounded | annualized | max drawdown |
-|---|---|---|---|---|
-| 5 | 20% capital | +33.5% | +15.5% | -4.3% |
-| 10 | 10% capital | +15.6% | +7.5% | -2.2% |
-| 15 | 6.7% capital | +10.1% | +4.9% | -1.5% |
-| 20 | 5% capital | +7.5% | +3.7% | -1.1% |
+| feature | op | value | TP_BPS | SL_BPS | SIZE | LABEL |
+|---|---|---|---|---|---|---|
+| `gap_filled` | `==` | `0` | `75` | `100` | `1` | `gap_open` |
+| `gap_filled` | `==` | `1` | `50` | `150` | `0.5` | `gap_filled_half` |
 
-**Baseline (no filter, corrected):**
-| N | 2-year | annualized |
-|---|---|---|
-| 5 | +28.5% | +13.4% |
-| 10 | +13.4% | +6.5% |
-| 20 | +6.5% | +3.2% |
+### After Rob uploads (a) trades CSV — validation checklist
 
-**Trade concurrency distribution:** median 2/day, mean 4.4/day, p95 13/day, **max 146** (April 7 2025 tariff shock — the rule fired on basically the entire IT sector simultaneously).
+Spot-check IMMEDIATELY:
 
-**Known tail-risk issue:** the April 7 outlier means even N=20 sizing sees ~7× leverage on tariff day. **A daily signal cap is needed** (e.g. drop any signal beyond the 10th of the day, prioritised by some criterion). Not yet implemented.
+1. **`exit_time_et` column:** every value in `09:30`–`15:59` ET. **Any `19:xx` = engine still broken — STOP.**
+2. **`minutes_held` column:** TIME exits should be nonzero (max ~320). Any TIME exit with `minutes_held == 0` is a phantom signature. (Note: legitimate TP exits CAN have `minutes_held == 0` when entry bar's high crosses TP within the entry minute — these are fine and concentrated at `exit_time_et == signal_time_et`.)
+3. **`gross_return_bps` distribution:** within `[-160, +90]`. Branch `gap_open`: ~[-107, +82.5]. Branch `gap_filled_half`: ~[-157.5, +57.5].
+4. **`exit_reason == NO_DATA` count:** expected to be ~14 (the previous phantoms now correctly skipped). Could be slightly higher or lower depending on which exact (symbol, date) pairs the new guard now catches. If NO_DATA count is dramatically larger (say >50), investigate — the guard may be too aggressive.
+5. **Trade count:** should be ~2055 minus NO_DATA count. So roughly 2040 valid exits.
+6. **Total NET P&L:** broadly in `[-3000, +12000]` bps (educated guess; could fall outside). The contaminated v0.7.11 raw sum of net was -129 bps; after removing the 14 phantoms it was +749 bps raw / +501 bps size-weighted. v0.7.12 should land near those latter figures (the 14 phantoms become NO_DATA = 0 P&L, mathematically equivalent to dropping them). **Do not anchor on this prediction — let the actual run be the baseline.**
 
-**Caveat on compounding math:** trades on the same day don't actually compound — they all draw from the same equity snapshot. The per-trade compounding I computed slightly overstates reality. A daily-compounded calculation would give ~90-95% of those numbers. Still positive, still meaningful.
+If spot-check passes → run per-quarter, per-symbol, per-branch analysis. **Do NOT make filter recommendations yet.** First show Rob the clean baseline.
 
----
-
-## What's in v0.7.7 (the current zip)
-
-### 1. `regime_ok` feature
-New column in `research_rows`:
-- Formula: `int((spy_momentum > 0) or (dist_to_prev_close_bps >= 0))`
-- Handles partial-input cases (only one of the two populated)
-- Computed in `feature_computer.compute_range` Pass-2
-- Migration added to `storage.init_schema` (existing DBs pick up the column on next startup)
-- Rule-usable via predicate `{"feature": "regime_ok", "op": "==", "value": 1}`
-
-**IMPORTANT:** the new column is NULL for historical rows until recompute runs. Rob needs to recompute the IT sector over the full range before the filter is testable end-to-end.
-
-### 2. Timestop default 15:30 → 15:50
-- All three locations updated: `BacktestConfig`, API Pydantic model, UI input
-- `CUTOFF_TIME_ET=15:30` for research rows is UNCHANGED (moving it would invalidate all historical research data)
-
-### 3. No-timestop mode
-- `BacktestConfig.timestop_et: str | None`
-- UI: empty input → `null` → timestop disabled
-- Empty string `""` also treated as disabled (forward/backward compat)
-- Engine: `_simulate_trade` and `_simulate_trade_reference` both honour the `timestop_enabled` flag
-- If neither TP nor SL hit and bars run out: legitimate TIME fallback at last close, invariant enforced
-- Storage: `None` coerced to `""` at write time (`backtest_runs.timestop_et` is `TEXT NOT NULL` on the live DB and migrating that constraint is risky)
-
-### Test coverage
-**205 + 29 + 16 = 250/250 passing** before packaging.
-- `tests/smoke_sectors.py` (205 checks): end-to-end compute, schema migration, backtest engine paths, storage, rule evaluation
-- `tests/smoke_backtest_audit.py` (29 checks): reference simulator, invariant enforcement, DST transitions, audit_run/repair_run E2E, no-timestop cases, 15:50 timestop behaviour
-- `tests/smoke_jobs.py` (16 checks): SQLite-backed JobRegistry, cross-worker visibility, error persistence
+If spot-check fails → STOP. Re-check `/source-version`, `/raw-bars/coverage` for the offending symbol/date, look at the failing trade's `entry_price` vs `exit_price` to characterize the new failure mode.
 
 ---
 
-## Bug/incident history this session (context for cautious deploys)
+## What we're trying to figure out (the actual project)
 
-**v0.7.1** — initial phantom-TIME fix. Shipped with endpoint crashes in prod (used sqlite3.connect directly instead of storage.connect; storage functions returned raw tuples that failed `dict(row)`).
+Rob is building a discretionary intraday trading strategy for the IT sector. Open questions:
+- Does the C-scaled rule have positive expected value on clean data?
+- Are there filters (regime, symbol exclusion, etc.) that meaningfully improve it?
+- What position sizing makes sense given trade concurrency profile?
+- Is the strategy robust across market regimes?
 
-**v0.7.2** — fixed storage-shape bugs. Also caught `storage.insert_backtest_run` didn't exist (correct: `record_backtest_run`), wrong field names (`spy_regime_min` vs `spy_regime_filter`, etc.), `collector.backfill_range` → `collect_range`. Added 22-test smoke including end-to-end DB tests. Rob said "trial and error is not acceptable." — valid pushback, lesson applied.
-
-**v0.7.3** — UI error messages improved to show server response body instead of generic "Unexpected token '<'".
-
-**v0.7.4** — discovered audit endpoint was 502'ing because 1,760 trades took minutes and the sync HTTP handler exhausted Render's worker timeout. Made audit/repair async via jobs.registry. Audit itself worked fine on server (93 seconds); UI couldn't see results.
-
-**v0.7.5** — added tolerance for transient 404s during poll; better error diagnostics.
-
-**v0.7.6** — root-caused the UI polls as multi-worker issue. In-memory `JobRegistry` stored jobs in one worker's Python dict; polls routing to a different worker saw 404. **Rewrote `jobs.py` as SQLite-backed** (`bt_jobs` table). This was the actual proper fix; everything before was working around symptoms.
-
-**v0.7.7** — regime_ok + 15:50 timestop + no-timestop mode (current zip).
-
-**Lesson for future work:** the "transient 404 tolerance" in v0.7.5 is still in the UI. It's belt-and-braces and not harmful, but the underlying fix is the SQLite jobs table. If there's ever a JobRegistry issue again, start by checking `/var/data/tech_collector.db` bt_jobs table, not the UI.
+We still don't know — pre-v0.7.12 data is all contaminated. v0.7.12 (a) re-run is the first chance at an honest answer.
 
 ---
 
-## What Rob should do after deploying v0.7.7
+## Open / pending items (priority ordered)
 
-1. **Verify version shows `0.7.7` in `/info`**
-2. **Recompute the IT sector** over the full range (Apr 2024 → present) so `regime_ok` populates for historical rows
-3. **Run 3 backtests** to validate the filter stack:
-   - (a) Baseline: existing rule, `timestop_et=15:50` (replicate the corrected baseline cleanly)
-   - (b) +Regime: new rule with `regime_ok == 1` predicate added, `timestop_et=15:50`
-   - (c) +Regime +No-timestop: same rule, leave timestop empty
-
-**Expected results (based on clean-data analysis):**
-- (a) should produce ~+12,600 bps (matching the corrected baseline)
-- (b) should produce ~+14,600 bps (+2,000 gain, drop ~12.5% of trades)
-- (c) is speculative — hypothesis is slightly higher avg per trade (fewer forced flats cap upside) with somewhat higher variance. The invariant tests guarantee no phantom blow-ups.
-
-4. **After validating: address the daily signal cap tail-risk.** The April 7 2025 behaviour (146 simultaneous signals) is a real portfolio-level risk regardless of filter. Needs a daily-cap feature: drop signals beyond the Nth of a given day, prioritised by some criterion (most recent? highest-momentum? smallest gap? TBD).
+1. **Re-run (a) full-range baseline on v0.7.12.** Pre-deploy checklist + post-deploy verification first.
+2. **Validate (a) CSV** — spot-check + NO_DATA count.
+3. **Analyze (a)** — per-quarter, per-symbol, per-branch, per-feature distributions on clean data.
+4. **Run (b)** with `regime_ok == 1` predicate. Same form. Compare.
+5. **Run (c)** with `regime_ok == 1` + no timestop (empty timestop_et). Compare.
+6. **(Backlog) Daily signal cap.** April 7 2025 had ~146 simultaneous signals. Real portfolio-level tail risk per-trade analysis can't catch. Need a `max_signals_per_day` BacktestConfig field.
+7. **(Backlog) Repair workflow.** `audit_run` / `repair_run` use `_simulate_trade_reference` in `backtest_audit.py`, which has the existing `_make_time_exit` invariant but does NOT have the v0.7.12 `_find_scan_bar_ts` session guard at its entry-resolution layer (it uses `_signal_time_to_utc_iso` instead, which doesn't search the bar list). Audit IS structurally protected by the invariant in `_make_time_exit` — would raise AssertionError on AH-only days rather than write contamination — but `audit_run`'s loop catches exceptions per trade, so the audit reports would mark these as `audit_error` rather than as clean re-simulation. Worth a follow-up if Rob wants to re-audit any historical run.
+8. **(Backlog) UI version display ('v–' issue).** Diagnose if it recurs.
 
 ---
 
-## Open questions / design decisions pending
+## What NOT to do
 
-**A. Daily signal cap implementation.** Where to enforce it: (1) in `run_backtest` as a BacktestConfig field (`max_signals_per_day: int | None`), (2) as a post-hoc filter in the rule engine, or (3) as a derived feature like `rank_in_day` computed in feature_computer? Option 1 is simplest and keeps backtest decisions explicit. Option 3 is cleanest semantically (rule predicate `rank_in_day <= 10`). Recommend option 1 for pragmatism.
+1. **Do not reference any pre-v0.7.12 backtest results as truth.** The v0.7.11 (a) baseline (`77416b6d`), the +12,613 bps "corrected baseline" from earlier sessions, the per-quarter breakdowns, regime/exclusion findings, MPWR/STX/CIEN losers, 1/N projections — all derived from contaminated data.
 
-**B. 38 NO_DATA trades.** Stored run has 38 trades the reference can't resolve (all have `bars_seen_post_entry = 0`). Concentrated on specific dates (2025-03-06 has 4, 2025-02-21 has 3, 2025-02-28 has 3, 2025-03-04 has 3). Likely partial bar-data issues. Could be recovered by re-backfilling those specific dates. Minor impact (2% of dataset); low priority but worth doing eventually.
+2. **Do not analyze the contaminated CSVs by "just removing the 14 phantoms".** Mathematically equivalent in some narrow senses but methodologically suspect — re-run on v0.7.12 and use that as the baseline.
 
-**C. Q3 2025 edge collapse.** Six months (Apr–Oct 2025) with +0.5 bps/trade avg. Nothing obvious in features predicts it. Could be a regime this strategy doesn't work in (low-VIX drifting tape? sector rotation out of tech?). If this represents a real structural change, post-deploy monitoring needs to catch similar conditions quickly.
+3. **Do not skip the deploy verification.** `/source-version` hash check + `/raw-bars/coverage` confirmation on a known phantom-source symbol/date are both required before running (a). The deploy mechanism has failed silently before (flat zip layout v0.7.0/v0.7.10/v0.7.11 worked; nested layouts v0.7.7/v0.7.8 silently failed).
 
-**D. Rule variants haven't been re-validated on clean data.** Earlier sessions compared C-scaled vs C-simple vs 75bps-alone vs 50bps-alone using buggy data. All those rankings are suspect. Should re-run on corrected data before making deployment decisions.
+4. **Do not propose new code changes before establishing the clean v0.7.12 baseline.** Wait for honest baseline numbers, then iterate.
 
-**E. Backtest on repaired run vs. new run.** v0.7.7 repair is available, but Rob hasn't clicked it yet. The corrected trades exist only in my analysis (`/home/claude/corrected_trades_51db4f14.csv` locally). Running repair makes them durable in the production DB. Recommend doing this so the corrected baseline is the "official" reference for future comparisons.
-
----
-
-## Artifacts on disk (next-session environment)
-
-### In `/home/claude/`
-- `corrected_trades_51db4f14.csv` — the clean trade dataset from the audit (1,760 rows; `ref_*` columns are the canonical outcomes; use for any further pattern analysis)
-- `audit_pack1/full.json` — 1,145KB audit report with per-trade records (identical to audit_pack2)
-- `audit_pack1/summary.json` — aggregate audit summary
-- `tech_rows/tech_scan_rows.csv` — full IT research_rows (feature-engineered) for joining with trades
-
-### In `/mnt/user-data/uploads/`
-- `backtest_audit_51db4f14_20260424T002756Z.zip` — first audit pack from production
-- `backtest_audit_51db4f14_20260424T003233Z.zip` — second audit pack (identical)
-- `backtest_51db4f14_trades.csv` — original (contaminated) trades CSV
-- `backtest_5d21a81a_trades.csv` — original trades CSV for the `dist_prev_close<=100` variant (contaminated)
-- `tech_scan_rows_information-technology_2024-04-22_to_2026-04-17.zip/.parquet` — 67MB research_rows dump
-- `tech_research_export_*` — monthly exports (likely less useful than the full parquet)
-
-### Code workspace in `/home/claude/tech_collector_work/`
-- Current local version of the whole app, matches v0.7.7 zip contents
-- Run `python3 -m tests.smoke_sectors`, `tests.smoke_backtest_audit`, `tests.smoke_jobs` to verify state
-
-### Transcript pointers
-- `/mnt/transcripts/2026-04-23-22-52-08-tech-collector-v07-backtest.txt`
-- `/mnt/transcripts/2026-04-23-23-44-07-tech-collector-v07-option-c-and-bug.txt`
-- `/mnt/transcripts/2026-04-24-00-44-27-tech-collector-v075-audit-repair.txt`
-- `/mnt/transcripts/journal.txt` — catalog of all prior transcripts
+5. **Do not assume the rule predicates are right.** `momentum > 0.002, rel_volume_r2k > 1.2, atr_reach < 5.0` are placeholders that produce ~2,055 signals. If results look weak, the rule itself may need rebuilding.
 
 ---
 
-## Production DB state (as of last session)
+## Files in the handoff zip
 
-- 20+ backtest runs in `backtest_runs`, most from before the phantom-TIME fix → **their P&L numbers should not be trusted without audit+repair**
-- `51db4f14` is the canonical C-scaled baseline; audit evidence pack exists at `/packs/backtest_audit_51db4f14_20260424T002754Z.zip`
-- `research_rows` table populated for IT, 2024-04-22 through approximately 2026-04-20
-- `regime_ok` column does NOT exist yet on Render (will be added when v0.7.7 starts; existing rows will be NULL until recompute)
-
----
-
-## Key constitutional reminders for the next Claude
-
-1. **Rob uses Render, not local.** Every "fix" requires deploy. Test hypotheses locally with simulated data BEFORE asking Rob to deploy. Don't ask him to deploy a diagnostic version.
-
-2. **UI errors must surface the real error.** Never wrap server responses in generic JSON-parse failure messages. Always log response status + first 500 chars of body.
-
-3. **Smoke tests catch what unit tests miss.** Every bug we've shipped this session was caught, after the fact, by a smoke test we should have had already. When adding any new code path, also add the smoke test for it BEFORE packaging.
-
-4. **Sqlite-connection-per-row is a worker-killer on Render.** If you're looping over trades/bars/rows doing DB queries, use one long-lived connection + an in-memory cache for repeated lookups. 1,760 `sqlite3.connect()` calls in one HTTP request will time out Render workers.
-
-5. **Multi-worker is not optional on Render.** Any in-memory singleton state (job queues, caches, rate-limiters) has to be SQLite-backed or the UI polling story will break.
-
-6. **The audit infrastructure is your friend.** If any future backtest engine change touches `_simulate_trade`, run the audit against a real baseline run afterwards to catch semantic regressions. The reference simulator in `backtest_audit.py` is the canonical authority.
-
-7. **Rob will correct you if you get trivial details wrong.** His time is not free. Triple-check function names against the actual codebase before using them (`record_backtest_run` not `insert_backtest_run`; `collect_range` not `backfill_range`).
+- `tech_collector_v0.7.12.zip` — current code, FLAT layout, all four smokes verified locally except `smoke_sectors` (network-blocked in dev sandbox; version-string assertions inside it bumped to 0.7.12)
+- `HANDOFF_BRIEFING.md` — this document
+- `HANDOFF_DATA.json` — programmatic state (hashes, v0.7.11 contamination summary, settings JSON)
 
 ---
 
-## Session-to-session continuity marker
+## First message to send Rob in the new chat
 
-When the new Claude picks this up, first actions should be:
-1. Read this briefing
-2. Confirm the v0.7.7 zip exists at `/mnt/user-data/outputs/tech_collector_v0.7.7.zip`
-3. Ask Rob: **"Have you deployed v0.7.7 and recomputed IT? If yes, the next step is the 3-backtest validation. If not, what's blocking?"**
-4. Wait for his answer before assuming state.
+Don't re-explain context. Confirm and prompt:
 
-Don't volunteer opinions on work he didn't ask about. Continue his train of thought.
+> Continuing from the prior chat. v0.7.12 is code-complete (AH-bar guard at `_find_scan_bar_ts` + main-loop invariant + `/raw-bars/coverage` diagnostic + 6 new regression tests). 74/74 verified on three smoke files locally; smoke_sectors needs to be run on Rob's machine before deploy. Have you deployed v0.7.12 yet? If not, run pre-deploy checklist; if yes, check `/source-version` hashes and `/raw-bars/coverage?symbol=SMCI&date=2024-11-14` before re-running (a).
+
+---
+
+## Working notes for next Claude
+
+- **The phantom-TIME failure class is now fully closed at three layers:** storage (v0.7.11 ET-date range), bar selection (v0.7.12 session guard), and simulator (v0.7.12 main-loop invariant + v0.7.1 fallback invariant). If a new variant ever appears, look outside this class first — likely something further upstream (research_rows compute, signal generation, or feed integrity).
+
+- **The audit infrastructure (`backtest_audit.py`) was NOT modified in v0.7.12.** It uses `_signal_time_to_utc_iso` (math, not bar-search) for entry-time resolution, so the AH-bar-selection vulnerability doesn't apply structurally. But its `_simulate_trade_reference` has not been re-verified against AH-only bar lists with the same rigour as `_simulate_trade`. If Rob requests re-audits of historical runs, treat audit output as needing its own validation pass.
+
+- **`/raw-bars/coverage` is the new debug primitive.** Before guessing about data integrity, query it. It's the equivalent of "look at the data first" that we should have built earlier.
+
+- **Trust your tests, not your hypotheses.** Got us through both v0.7.11 and v0.7.12. End-to-end reproducer tests with realistic-shape inputs are the only thing that's caught these phantom variants reliably.
+
+- **Be honest about uncertainty.** "I think this fixes it; let's verify on production." When something works, "this is working." When something is broken, "this is broken." Don't bury bad news.

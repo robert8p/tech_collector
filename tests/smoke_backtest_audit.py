@@ -685,6 +685,288 @@ def test_v0711_get_raw_bars_filters_by_et_date():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def test_v0712_find_scan_bar_ts_rejects_after_hours():
+    """v0.7.12: _find_scan_bar_ts must reject after-hours bars (et.hour >= 16)
+    even when the ET date matches and the time satisfies scan_time_et.
+
+    This is the exact production failure mode from the v0.7.11 baseline
+    backtest: when raw_bars for a (symbol, date) contains ONLY after-hours
+    bars (regular-session bars missing), _find_scan_bar_ts pre-v0.7.12
+    would return the first 19:00 ET bar's UTC timestamp because:
+      - ET date matches (signal_date_et guard satisfied)
+      - et.hour=19 >= scan_hh=10 (scan-time guard satisfied)
+    The simulator then anchored entry on that AH bar and fired the
+    timestop on the first iteration with bogus gross P&L.
+
+    Post-v0.7.12: the function returns None, run_backtest emits NO_DATA.
+    """
+    from tech_collector import backtest as _bt
+    # Bars only at ET 19:00-19:04 of 2024-11-14 (winter EST).
+    # ET 19:00 EST = UTC 00:00 of 2024-11-15.
+    bars = [
+        _bar(f"2024-11-15T00:{m:02d}:00Z", 17.75, 17.80, 17.70, 17.75)
+        for m in range(0, 5)
+    ]
+    # Without v0.7.12 guard, this would return the first AH bar's ts.
+    ts = _bt._find_scan_bar_ts(bars, "10:30", signal_date_et="2024-11-14")
+    _check(
+        "v0712: AH-only bars yield None for 10:30 scan",
+        ts is None,
+        f"got {ts!r} (expected None)",
+    )
+
+
+def test_v0712_find_scan_bar_ts_rejects_pre_market():
+    """v0.7.12: pre-market bars (before 09:30 ET) are also not valid entry
+    candidates. With only pre-market bars present, function returns None.
+    """
+    from tech_collector import backtest as _bt
+    # Bars at ET 08:00-08:04 (winter EST = UTC 13:00-13:04).
+    bars = [
+        _bar(f"2024-11-14T13:{m:02d}:00Z", 18.0, 18.05, 17.95, 18.0)
+        for m in range(0, 5)
+    ]
+    ts = _bt._find_scan_bar_ts(bars, "10:30", signal_date_et="2024-11-14")
+    _check(
+        "v0712: pre-market-only bars yield None",
+        ts is None,
+        f"got {ts!r} (expected None)",
+    )
+
+
+def test_v0712_find_scan_bar_ts_accepts_regular_session():
+    """v0.7.12 sanity: with regular-session bars present, function still
+    returns the correct first-at-or-after-scan-time bar. Guards must not
+    break the happy path.
+    """
+    from tech_collector import backtest as _bt
+    # Bars across 10:00-10:35 ET on 2024-11-14 (winter EST).
+    # ET 10:30 EST = UTC 15:30.
+    bars = [
+        _bar(f"2024-11-14T{utc_h:02d}:{utc_m:02d}:00Z",
+             100.0, 100.1, 99.9, 100.0)
+        for utc_h, utc_m in [
+            (15, 0), (15, 15), (15, 30), (15, 31), (15, 35),
+        ]
+    ]
+    ts = _bt._find_scan_bar_ts(bars, "10:30", signal_date_et="2024-11-14")
+    _check(
+        "v0712: regular session 10:30 still resolves correctly",
+        ts == "2024-11-14T15:30:00Z",
+        f"got {ts!r} (expected 2024-11-14T15:30:00Z)",
+    )
+
+
+def test_v0712_find_scan_bar_ts_skips_AH_finds_regular():
+    """v0.7.12: with a MIX of AH and regular-session bars (e.g. same-day
+    AH at ET 19:00 plus regular session at 10:30), the regular-session
+    bar must still be selected — not the AH bar. The session guard must
+    not also accidentally exclude valid regular-session bars.
+    """
+    from tech_collector import backtest as _bt
+    bars = [
+        # ET 10:30 regular session
+        _bar("2024-11-14T15:30:00Z", 100.0, 100.1, 99.9, 100.0),
+        # ET 19:00 same-day AH (UTC 00:00 next day)
+        _bar("2024-11-15T00:00:00Z", 95.0, 95.5, 94.5, 95.0),
+    ]
+    ts = _bt._find_scan_bar_ts(bars, "10:30", signal_date_et="2024-11-14")
+    _check(
+        "v0712: regular 10:30 picked over same-day AH",
+        ts == "2024-11-14T15:30:00Z",
+        f"got {ts!r}",
+    )
+
+
+def test_v0712_simulate_trade_main_loop_invariant_fires():
+    """v0.7.12: if entry_ts somehow points at an AH bar AND timestop_h<=15,
+    the main-loop TIME exit must raise on the gross-return invariant.
+
+    This is defense-in-depth: the v0.7.12 _find_scan_bar_ts guard should
+    prevent this situation in production, but if a future regression at
+    the bar-selection layer ever lets an AH bar through, _simulate_trade
+    must fail loudly rather than silently writing contaminated trades.
+    Pre-v0.7.12, no invariant existed on the main-loop TIME path — only
+    on the fallback path — so phantom hits with gross like -740 bps or
+    +864 bps got recorded.
+    """
+    from tech_collector import backtest as _bt
+    # Construct: entry at ET 19:00 (an AH bar), bars sit at 19:00 / 19:01.
+    # entry_price = 100.0 (the research_rows scan_price from earlier in the
+    # day), bar opens at 92.0 — a -800 bps phantom gap.
+    bars = [
+        _bar("2024-11-15T00:00:00Z", 92.0, 92.5, 91.5, 92.0),
+        _bar("2024-11-15T00:01:00Z", 92.0, 92.1, 91.9, 92.0),
+    ]
+    raised = False
+    try:
+        _bt._simulate_trade(
+            bars=bars,
+            entry_ts_utc="2024-11-15T00:00:00Z",
+            entry_price=100.0,
+            tp_level=75.0,
+            sl_level=100.0,
+            timestop_et_hhmm="15:50",
+            slippage_bps=15.0,
+            entry_slippage_split=0.5,
+        )
+    except AssertionError as e:
+        raised = True
+        msg = str(e)
+    _check(
+        "v0712: main-loop TIME invariant raises on AH-bar entry",
+        raised,
+        "AssertionError was NOT raised — invariant missing or insufficient",
+    )
+    if raised:
+        _check(
+            "v0712: invariant message mentions session guard",
+            "_find_scan_bar_ts" in msg or "after-hours" in msg.lower(),
+            f"unexpected message: {msg[:200]}",
+        )
+
+
+def test_v0712_run_backtest_AH_only_yields_NO_DATA():
+    """v0.7.12 end-to-end: a research_row signal whose raw_bars contains
+    ONLY after-hours bars must produce a NO_DATA trade, not a phantom
+    TIME exit at 19:00. This is the production failure mode from the
+    v0.7.11 (a)-baseline run (14 phantom rows: SMCI ×7, PLTR ×5, etc.).
+    """
+    import tempfile, shutil, os
+    from tech_collector import config, storage
+
+    tmpdir = tempfile.mkdtemp(prefix="v0712_ah_only_")
+    db = os.path.join(tmpdir, "test.db")
+    orig_db = config.DB_PATH
+    config.DB_PATH = db
+    try:
+        storage.init_schema(db)
+        storage.init_backtest_schema(db)
+
+        # Insert ONLY after-hours bars for SMCI on 2024-11-14 (winter EST):
+        # ET 19:00-19:09 = UTC 00:00-00:09 of 2024-11-15.
+        bars = []
+        for utc_min in range(0, 10):
+            bars.append({
+                "symbol": "SMCI",
+                "timestamp_utc": f"2024-11-15T00:{utc_min:02d}:00Z",
+                "open": 17.75, "high": 17.80, "low": 17.70, "close": 17.75,
+                "volume": 1000, "vwap": 17.75, "trade_count": 50,
+                "sector": "Information Technology",
+            })
+        # SPY for any regime features (regular session, so feature compute
+        # has bars to lean on if it's invoked).
+        for utc_h in range(14, 21):
+            for utc_m in range(0, 60, 30):
+                if utc_h == 14 and utc_m < 30:
+                    continue
+                if utc_h == 21 and utc_m > 0:
+                    continue
+                bars.append({
+                    "symbol": "SPY",
+                    "timestamp_utc": f"2024-11-14T{utc_h:02d}:{utc_m:02d}:00Z",
+                    "open": 500.0, "high": 500.5, "low": 499.5, "close": 500.0,
+                    "volume": 1_000_000, "vwap": 500.0, "trade_count": 1000,
+                    "sector": None,
+                })
+        with storage.connect(db) as conn:
+            storage.insert_bars(
+                conn, bars, feed="sip",
+                pulled_at_utc="2024-11-14T22:00:00Z",
+                sector="Information Technology",
+            )
+
+        # Insert a research_row at 10:30 with a sane scan_price. (Note:
+        # in production this scan_price came from raw_bars at compute
+        # time when regular-session bars existed; the test simulates the
+        # post-cleanup state where research_rows persists but raw_bars
+        # for that day no longer has the regular session.)
+        rr = {
+            "symbol": "SMCI", "date": "2024-11-14", "scan_time_et": "10:30",
+            "sector": "Information Technology",
+            "minutes_since_open": 60, "scan_price": 19.18,
+            "open_to_scan_return": 0.001, "gap_pct": 0.0,
+            "intraday_range_position": 0.5,
+            "distance_to_vwap": 0.0, "distance_to_day_high": 0.0,
+            "distance_to_day_low": 0.0,
+            "rsi_14": 60.0, "macd_hist": 0.1,
+            "ema_9_distance": 0.001, "ema_20_distance": 0.001,
+            "ema_50_distance": 0.001,
+            "relative_volume": 1.5, "realized_vol_so_far": 0.005,
+            "sector_relative_strength": 0.0,
+            "day_of_week": "Thu", "cutoff_time_et": "15:30",
+            "cutoff_price": 19.18,
+            "return_to_cutoff": 0.0, "min_return_before_cutoff": -0.001,
+            "max_return_before_cutoff": 0.001, "rs_leakfree": 0.0,
+            "return_at_scan_plus_30m": 0.0, "return_at_scan_plus_60m": 0.0,
+            "return_at_scan_plus_90m": 0.0, "return_at_scan_plus_120m": 0.0,
+            "bars_missing_pre_scan": 0, "bars_missing_post_scan": 0,
+            "feed_source": "sip", "pulled_at_utc": "2024-11-14T22:00:00Z",
+            "momentum": 0.005, "rel_volume_r2k": 1.5, "vwap_slope": 0.001,
+            "orb_strength": 0.0,
+            "atr_reach": 1.0, "spy_ret": 0.001, "ret_vs_spy": 0.0,
+            "spy_momentum": 0.001, "mom_vs_spy": 0.001, "spy_vol": 0.005,
+            "gap_filled": 0, "range_tightness_30m": 0.005,
+            "bars_in_range_20bps": 5, "is_nr7": 0,
+            "dist_to_day_high_bps": 50, "broke_day_high_this_bar": 0,
+            "broke_opening_range_high": 0, "bars_since_day_high": 30,
+            "dist_to_prev_close_bps": 50, "dist_to_5d_high_bps": 100,
+            "dist_to_20d_high_bps": 200, "days_since_20d_high": 5,
+            "volume_acceleration": 1.0, "cumulative_volume_vs_typical": 1.0,
+            "sector_breadth_up": 0.5, "new_highs_in_sector": 5,
+            "target_25bps": 1, "target_peak_25bps": 1,
+            "target_50bps": 1, "target_peak_50bps": 1,
+            "target_75bps": 1, "target_peak_75bps": 1, "target": 1,
+            "regime_ok": 1,
+        }
+        with storage.connect(db) as conn:
+            storage.insert_research_rows(conn, [rr])
+
+        from tech_collector import rule_tester, backtest as _bt
+        rule = rule_tester.Rule.from_dict({
+            "id": "v0712-ah-only-test",
+            "sector": "Information Technology",
+            "target": "target_peak_75bps",
+            "predicates": [{"feature": "momentum", "op": ">", "value": 0.002}],
+        })
+        bt_config = _bt.BacktestConfig(
+            rule=rule, tp_bps=75.0, sl_bps=100.0, timestop_et="15:50",
+            slippage_bps=15.0, just_in_time_backfill=False,
+            conditional_exits=[],
+        )
+        result = _bt.run_backtest(bt_config, db_path=db)
+        with storage.connect(db) as conn:
+            trades = storage.get_backtest_trades(conn, result["run_uuid"])
+
+        _check(
+            "v0712-AH-only: produced exactly 1 trade row",
+            len(trades) == 1, f"got {len(trades)}",
+        )
+        if not trades:
+            return
+        t = trades[0]
+        _check(
+            "v0712-AH-only: trade is NO_DATA (NOT phantom TIME at 19:xx)",
+            t["exit_reason"] == "NO_DATA",
+            f"got exit_reason={t['exit_reason']!r}, "
+            f"exit_time_et={t['exit_time_et']!r}, "
+            f"gross={t['gross_return_bps']:.2f}",
+        )
+        _check(
+            "v0712-AH-only: gross is 0 (no contaminated P&L)",
+            abs(t["gross_return_bps"]) < 0.001,
+            f"got gross={t['gross_return_bps']}",
+        )
+        _check(
+            "v0712-AH-only: exit_time_et is NA (NOT 19:00)",
+            t["exit_time_et"] == "NA",
+            f"got exit_time_et={t['exit_time_et']!r}",
+        )
+    finally:
+        config.DB_PATH = orig_db
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 def main() -> int:
     print("SMOKE: backtest_audit + _simulate_trade fix")
     print("=" * 60)
@@ -711,6 +993,13 @@ def main() -> int:
         # v0.7.11
         test_v0711_phantom_bug_regression,
         test_v0711_get_raw_bars_filters_by_et_date,
+        # v0.7.12
+        test_v0712_find_scan_bar_ts_rejects_after_hours,
+        test_v0712_find_scan_bar_ts_rejects_pre_market,
+        test_v0712_find_scan_bar_ts_accepts_regular_session,
+        test_v0712_find_scan_bar_ts_skips_AH_finds_regular,
+        test_v0712_simulate_trade_main_loop_invariant_fires,
+        test_v0712_run_backtest_AH_only_yields_NO_DATA,
     ]
     for t in tests:
         try:
