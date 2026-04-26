@@ -23,8 +23,11 @@ X-API-Key header matching the API_KEY environment variable.
 """
 from __future__ import annotations
 
+import io
+import json
 import logging
 import os
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -337,6 +340,7 @@ def info():
             "rules-retire":  "POST /rules/retire         (v0.4.0)",
             "rules-tracked": "GET  /rules/tracked        (v0.4.0, list active rules)",
             "rules-history": "GET  /rules/{id}/history   (v0.4.0, decay tracking)",
+            "backtest-batch-run": "POST /backtest/batch/run  (v0.7.22, async sequential preset batch)",
             "jobs":     "GET /jobs/{id}  or  GET /jobs",
             "packs":    "GET /packs  or  GET /packs/{filename}",
         },
@@ -1155,6 +1159,18 @@ class BacktestRunRequest(BaseModel):
     )
 
 
+class BacktestBatchRunRequest(BaseModel):
+    """v0.7.22: a batch of backtest presets to run sequentially.
+
+    The UI normalises uploaded presets before posting, but the server also
+    accepts common preset aliases so a batch JSON can contain the same objects
+    users download from the dashboard.
+    """
+    label: str | None = Field(default=None, description="Optional human-readable batch label.")
+    presets: list[dict] = Field(..., description="List of backtest preset objects.")
+    stop_on_error: bool = Field(default=False, description="Stop after the first failed preset when true.")
+
+
 @app.get("/backtest/engine-selftest")
 def backtest_engine_selftest():
     """v0.7.9: directly invoke _simulate_trade with three canonical scenarios
@@ -1334,16 +1350,8 @@ def raw_bars_coverage(symbol: str, date: str):
     }
 
 
-@app.post("/backtest/run", dependencies=[Depends(_require_api_key)])
-def backtest_run(req: BacktestRunRequest):
-    """Execute a path-dependent backtest and return the summary.
-
-    This is a synchronous endpoint. For typical runs (a few hundred signals,
-    just-in-time backfill disabled because raw_bars are already there) it
-    returns in seconds. For runs that require just-in-time backfill across
-    many (symbol, date) pairs, it can take minutes — each unique day is one
-    Alpaca call.
-    """
+def _backtest_request_to_config(req: BacktestRunRequest) -> backtest.BacktestConfig:
+    """Convert an API request into the engine config. Shared by single and batch runs."""
     try:
         rule = rule_tester.Rule.from_dict({
             "id": req.rule.id,
@@ -1352,7 +1360,7 @@ def backtest_run(req: BacktestRunRequest):
             "predicates": [p.model_dump() for p in req.rule.predicates],
         })
     except (ValueError, KeyError) as e:
-        raise HTTPException(status_code=400, detail=f"Bad rule: {e}")
+        raise ValueError(f"Bad rule: {e}")
 
     cond_branches = [
         backtest.ConditionalExitBranch(
@@ -1362,7 +1370,7 @@ def backtest_run(req: BacktestRunRequest):
         )
         for c in req.conditional_exits
     ]
-    bt_config = backtest.BacktestConfig(
+    return backtest.BacktestConfig(
         rule=rule,
         tp_bps=req.tp_bps, sl_bps=req.sl_bps,
         timestop_et=req.timestop_et,
@@ -1377,11 +1385,265 @@ def backtest_run(req: BacktestRunRequest):
         delete_raw_bars_after=req.delete_raw_bars_after,
         conditional_exits=cond_branches,
     )
+
+
+def _execute_backtest_request(req: BacktestRunRequest) -> dict:
+    bt_config = _backtest_request_to_config(req)
+    return backtest.run_backtest(bt_config, db_path=config.DB_PATH)
+
+
+def _first_present(d: dict, keys: list[str], default=None):
+    for k in keys:
+        if k in d and d[k] is not None:
+            return d[k]
+    return default
+
+
+def _normalise_backtest_preset_dict(raw: dict) -> dict:
+    """Accept dashboard preset aliases and return a BacktestRunRequest-compatible dict."""
+    if not isinstance(raw, dict):
+        raise ValueError("Each batch item must be a JSON object")
+    cfg = dict(raw.get("backtest") or raw)
+    rule = cfg.get("rule")
+    if rule is None and isinstance(cfg.get("rules"), list) and cfg["rules"]:
+        rule = cfg["rules"][0]
+    if rule is None:
+        raise ValueError("Preset must contain rule or rules[0]")
+
+    out = {
+        "rule": rule,
+        "tp_bps": _first_present(cfg, ["tp_bps", "tp", "take_profit_bps"], 50),
+        "sl_bps": _first_present(cfg, ["sl_bps", "sl", "stop_loss_bps"], 100),
+        "timestop_et": _first_present(cfg, ["timestop_et", "timestop"], "15:50"),
+        "slippage_bps": _first_present(cfg, ["slippage_bps", "slippage"], 10),
+        "spy_regime_filter": _first_present(cfg, ["spy_regime_filter", "regime_filter"], None),
+        "symbol_exclude": _first_present(cfg, ["symbol_exclude", "exclude_symbols", "symbols_exclude"], []),
+        "start_date": _first_present(cfg, ["start_date", "start"], None),
+        "end_date": _first_present(cfg, ["end_date", "end"], None),
+        "filter_mode": _first_present(cfg, ["filter_mode", "signal_filter_mode"], "standard"),
+        "entry_delay_minutes": _first_present(cfg, ["entry_delay_minutes", "entry_delay", "entry_delay_min"], 0),
+        "min_exit_minutes": _first_present(cfg, ["min_exit_minutes", "min_exit_delay", "min_exit_delay_minutes"], 0),
+        "just_in_time_backfill": _first_present(cfg, ["just_in_time_backfill", "jit_backfill", "jit"], True),
+        "delete_raw_bars_after": _first_present(cfg, ["delete_raw_bars_after"], False),
+        "conditional_exits": _first_present(cfg, ["conditional_exits", "conditional_exit_branches"], []),
+    }
+    if out["timestop_et"] == "":
+        out["timestop_et"] = None
+    if isinstance(out["symbol_exclude"], str):
+        out["symbol_exclude"] = [s.strip().upper() for s in out["symbol_exclude"].split(",") if s.strip()]
+    return out
+
+
+def _batch_progress(job_id: str, *, label: str | None, total: int, completed: int, current_index: int | None, items: list[dict], zip_filename: str | None = None, manifest_filename: str | None = None) -> None:
+    jobs.registry._update_status(
+        job_id, "running",
+        result={
+            "kind": "backtest_batch",
+            "label": label,
+            "total": total,
+            "completed": completed,
+            "current_index": current_index,
+            "items": items,
+            "batch_zip_filename": zip_filename,
+            "batch_manifest_filename": manifest_filename,
+        },
+    )
+
+
+def _run_backtest_batch_job(job_id: str, presets: list[dict], label: str | None = None, stop_on_error: bool = False) -> dict:
+    """Run batch presets sequentially and package all CSVs into one evidence ZIP."""
+    total = len(presets)
+    items: list[dict] = []
+    _batch_progress(job_id, label=label, total=total, completed=0, current_index=None, items=items)
+
+    for idx, raw in enumerate(presets, start=1):
+        item = {
+            "index": idx,
+            "status": "running",
+            "label": raw.get("label") or raw.get("name") or raw.get("id"),
+        }
+        try:
+            normalised = _normalise_backtest_preset_dict(raw)
+            req = BacktestRunRequest.model_validate(normalised)
+            item["rule_id"] = req.rule.id
+            item["tp_bps"] = req.tp_bps
+            item["sl_bps"] = req.sl_bps
+            item["filter_mode"] = req.filter_mode
+            item["entry_delay_minutes"] = req.entry_delay_minutes
+            item["min_exit_minutes"] = req.min_exit_minutes
+            item["status"] = "running"
+            if len(items) < idx:
+                items.append(item)
+            else:
+                items[idx - 1] = item
+            _batch_progress(job_id, label=label, total=total, completed=idx-1, current_index=idx, items=items)
+
+            summary = _execute_backtest_request(req)
+            item.update({
+                "status": "succeeded",
+                "run_uuid": summary.get("run_uuid"),
+                "trades_csv_filename": summary.get("trades_csv_filename"),
+                "n_signals_total": summary.get("n_signals_total"),
+                "n_trades": summary.get("n_trades"),
+                "win_rate": summary.get("win_rate"),
+                "net_pnl_bps": summary.get("net_pnl_bps"),
+                "avg_net_bps_per_trade": summary.get("avg_net_bps_per_trade"),
+                "exit_reason_mix": summary.get("exit_reason_mix"),
+            })
+        except Exception as e:
+            logger.exception("Batch backtest item %s failed", idx)
+            item.update({"status": "failed", "error": f"{type(e).__name__}: {e}"})
+            if len(items) < idx:
+                items.append(item)
+            else:
+                items[idx - 1] = item
+            _batch_progress(job_id, label=label, total=total, completed=idx, current_index=None, items=items)
+            if stop_on_error:
+                break
+
+        if len(items) < idx:
+            items.append(item)
+        else:
+            items[idx - 1] = item
+        _batch_progress(job_id, label=label, total=total, completed=idx, current_index=None, items=items)
+
+    generated_at = datetime.now(timezone.utc).isoformat()
+    safe_id = job_id[:8]
+    manifest = {
+        "batch_job_id": job_id,
+        "label": label,
+        "generated_at_utc": generated_at,
+        "total": total,
+        "succeeded": sum(1 for i in items if i.get("status") == "succeeded"),
+        "failed": sum(1 for i in items if i.get("status") == "failed"),
+        "items": items,
+    }
+    pack_dir = Path(config.EVIDENCE_PACK_DIR)
+    pack_dir.mkdir(parents=True, exist_ok=True)
+    manifest_filename = f"backtest_batch_{safe_id}_manifest.json"
+    manifest_path = pack_dir / manifest_filename
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    zip_filename = f"backtest_batch_{safe_id}_outputs.zip"
+    zip_path = pack_dir / zip_filename
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.write(manifest_path, arcname=manifest_filename)
+        for item in items:
+            csv_name = item.get("trades_csv_filename")
+            if not csv_name:
+                continue
+            csv_path = pack_dir / csv_name
+            if csv_path.exists():
+                zf.write(csv_path, arcname=csv_name)
+    manifest["batch_zip_filename"] = zip_filename
+    manifest["batch_zip_url"] = f"/packs/{zip_filename}"
+    manifest["batch_manifest_filename"] = manifest_filename
+    manifest["batch_manifest_url"] = f"/packs/{manifest_filename}"
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    return manifest
+
+
+@app.post("/backtest/run", dependencies=[Depends(_require_api_key)])
+def backtest_run(req: BacktestRunRequest):
+    """Execute a path-dependent backtest and return the summary.
+
+    This is a synchronous endpoint. For typical runs (a few hundred signals,
+    just-in-time backfill disabled because raw_bars are already there) it
+    returns in seconds. For runs that require just-in-time backfill across
+    many (symbol, date) pairs, it can take minutes — each unique day is one
+    Alpaca call.
+    """
     try:
-        return backtest.run_backtest(bt_config, db_path=config.DB_PATH)
+        return _execute_backtest_request(req)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.exception("Backtest run failed")
         raise HTTPException(status_code=500, detail=f"Backtest failed: {e}")
+
+
+def _extract_presets_from_uploaded_batch(filename: str, content: bytes) -> list[dict]:
+    """Parse a .json batch/single preset or a .zip containing JSON presets."""
+    name = (filename or "uploaded").lower()
+
+    def _from_json_bytes(data: bytes, source_name: str) -> list[dict]:
+        try:
+            obj = json.loads(data.decode("utf-8"))
+        except Exception as e:
+            raise ValueError(f"{source_name}: invalid JSON: {e}")
+        if isinstance(obj, dict) and isinstance(obj.get("presets"), list):
+            return obj["presets"]
+        if isinstance(obj, dict) and isinstance(obj.get("backtests"), list):
+            return obj["backtests"]
+        if isinstance(obj, list):
+            return obj
+        if isinstance(obj, dict):
+            return [obj]
+        raise ValueError(f"{source_name}: expected JSON object, array, or object with presets[]")
+
+    if name.endswith(".zip"):
+        out: list[dict] = []
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                json_names = [n for n in zf.namelist() if n.lower().endswith(".json") and not n.endswith("/")]
+                if not json_names:
+                    raise ValueError("zip contains no .json preset files")
+                for n in sorted(json_names):
+                    out.extend(_from_json_bytes(zf.read(n), n))
+        except zipfile.BadZipFile:
+            raise ValueError("uploaded file is not a valid ZIP")
+        return out
+
+    return _from_json_bytes(content, filename or "uploaded.json")
+
+
+def _start_backtest_batch_job(label: str | None, presets: list[dict], stop_on_error: bool = False) -> dict:
+    if not presets:
+        raise HTTPException(status_code=400, detail="Batch contains no presets")
+    if len(presets) > 25:
+        raise HTTPException(status_code=400, detail="Batch limit is 25 presets per run")
+
+    # Validate up-front enough to fail fast on malformed files before starting a job.
+    for idx, raw in enumerate(presets, start=1):
+        try:
+            BacktestRunRequest.model_validate(_normalise_backtest_preset_dict(raw))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Preset {idx} is invalid: {e}")
+
+    job = jobs.registry.create(
+        "backtest_batch",
+        params={"label": label, "n_presets": len(presets), "stop_on_error": stop_on_error},
+    )
+    jobs.registry.run_async(
+        job, _run_backtest_batch_job,
+        job_id=job.job_id, presets=presets, label=label, stop_on_error=stop_on_error,
+    )
+    return {
+        "job_id": job.job_id,
+        "status": "started",
+        "kind": "backtest_batch",
+        "n_presets": len(presets),
+        "poll": f"/jobs/{job.job_id}",
+    }
+
+
+@app.post("/backtest/batch/run", dependencies=[Depends(_require_api_key)])
+def backtest_batch_run(req: BacktestBatchRunRequest):
+    """v0.7.22: start a sequential batch from a JSON request body."""
+    return _start_backtest_batch_job(req.label, req.presets, req.stop_on_error)
+
+
+@app.post("/backtest/batch/upload-run", dependencies=[Depends(_require_api_key)])
+async def backtest_batch_upload_run(file: UploadFile = File(...), label: str | None = None, stop_on_error: bool = False):
+    """v0.7.22: upload a .json batch, one .json preset, or a .zip of JSON presets and run sequentially."""
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    try:
+        presets = _extract_presets_from_uploaded_batch(file.filename or "uploaded", content)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return _start_backtest_batch_job(label or file.filename, presets, stop_on_error)
 
 
 @app.get("/backtest/{run_uuid}", dependencies=[Depends(_require_api_key)])
