@@ -165,6 +165,72 @@ class BacktestConfig:
     entry_delay_minutes: int = 0
 
 
+# v0.7.21: diagnostic feature export for execution-aligned rule discovery.
+# These columns are copied from the signal row into the downloadable trades CSV
+# with a `sig_` prefix. This does NOT change simulation behaviour or DB schema;
+# it only makes uploaded backtest outputs useful for finding why actual
+# executable trades won/lost.
+BACKTEST_SIGNAL_EXPORT_COLUMNS = [
+    # outcomes / audit fields (diagnostic only; never use as predictors)
+    "target", "return_to_cutoff", "min_return_before_cutoff", "max_return_before_cutoff",
+    "return_at_scan_plus_30m", "return_at_scan_plus_60m",
+    "return_at_scan_plus_90m", "return_at_scan_plus_120m",
+    "target_25bps", "target_50bps", "target_75bps",
+    "target_peak_25bps", "target_peak_50bps", "target_peak_75bps",
+    "bars_missing_pre_scan", "bars_missing_post_scan",
+    # scan-time candidate predictors
+    "minutes_since_open", "day_of_week", "open_to_scan_return", "gap_pct",
+    "intraday_range_position", "distance_to_vwap", "distance_to_day_high",
+    "distance_to_day_low", "rsi_14", "macd_hist", "ema_9_distance",
+    "ema_20_distance", "ema_50_distance", "relative_volume",
+    "realized_vol_so_far", "rs_leakfree", "momentum", "rel_volume_r2k",
+    "vwap_slope", "orb_strength", "atr_reach", "trend_str", "range_expansion",
+    "spy_ret", "ret_vs_spy", "spy_momentum", "mom_vs_spy", "spy_vol",
+    "gap_filled", "range_tightness_30m", "bars_in_range_20bps", "is_nr7",
+    "dist_to_day_high_bps", "broke_day_high_this_bar",
+    "broke_opening_range_high", "bars_since_day_high",
+    "dist_to_prev_close_bps", "dist_to_5d_high_bps", "dist_to_20d_high_bps",
+    "days_since_20d_high", "volume_acceleration",
+    "cumulative_volume_vs_typical", "sector_breadth_up",
+    "new_highs_in_sector", "regime_ok",
+]
+
+
+def _clean_export_value(v):
+    """Return a CSV-safe scalar value for a signal-row field."""
+    try:
+        if pd.isna(v):
+            return None
+    except Exception:
+        pass
+    if isinstance(v, (np.integer,)):
+        return int(v)
+    if isinstance(v, (np.floating,)):
+        return float(v)
+    if isinstance(v, (np.bool_,)):
+        return bool(v)
+    return v
+
+
+def _signal_export_fields(sig: pd.Series) -> dict:
+    out: dict = {}
+    for col in BACKTEST_SIGNAL_EXPORT_COLUMNS:
+        if col in sig.index:
+            out[f"sig_{col}"] = _clean_export_value(sig.get(col))
+    return out
+
+
+def _entry_vs_scan_bps(sig: pd.Series, entry_price_used: float) -> float | None:
+    try:
+        scan_px = float(sig.get("scan_price"))
+        if not math.isfinite(scan_px) or scan_px <= 0:
+            return None
+        return (float(entry_price_used) / scan_px - 1.0) * 10_000.0
+    except Exception:
+        return None
+
+
+
 # ---------------------------------------------------------------------------
 # Simulation — core path-dependent logic
 # ---------------------------------------------------------------------------
@@ -650,6 +716,8 @@ def run_backtest(
                         "position_size": 1.0,
                         "tp_bps_used": bt.tp_bps,
                         "sl_bps_used": bt.sl_bps,
+                        "entry_vs_scan_bps": 0.0,
+                        **_signal_export_fields(sig),
                     })
                 continue
             for _, sig in group.iterrows():
@@ -710,6 +778,8 @@ def run_backtest(
                         "position_size": 1.0,
                         "tp_bps_used": bt.tp_bps,
                         "sl_bps_used": bt.sl_bps,
+                        "entry_vs_scan_bps": 0.0,
+                        **_signal_export_fields(sig),
                     })
                     continue
 
@@ -761,6 +831,8 @@ def run_backtest(
                     "position_size": size_mult,
                     "tp_bps_used": tp_eff,
                     "sl_bps_used": sl_eff,
+                    "entry_vs_scan_bps": _entry_vs_scan_bps(sig, entry_price_used),
+                    **_signal_export_fields(sig),
                     **result,
                 })
             if bt.delete_raw_bars_after:
