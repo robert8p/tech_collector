@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: tech-collector
+    runtime: python
+    plan: starter          # $7/mo; has persistent-disk support
+    region: oregon         # match your existing scanners if different
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn tech_collector.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ALPACA_API_KEY
+        sync: false        # set manually in Render dashboard
+      - key: ALPACA_API_SECRET
+        sync: false
+      - key: API_KEY
+        sync: false        # your chosen shared secret for the HTTP endpoints
+      - key: DATA_DIR
+        value: /var/data   # mount point for the persistent disk below
+      - key: PYTHON_VERSION
+        value: "3.11"
+    disk:
+      name: tech-collector-data
+      mountPath: /var/data
+      sizeGB: 5            # SQLite (~3 GB) + evidence packs (~100 MB) + margin

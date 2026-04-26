@@ -1,0 +1,113 @@
+{
+  "session_version_ending": "0.7.7",
+  "ui_version_expected": "0.7.7",
+  "phantom_time_bug": {
+    "status": "fixed in v0.7.1+",
+    "description": "_simulate_trade fallback took last bar close as TIME without re-scanning for missed TP/SL crossings. Produced stored returns outside bounds on big intraday moves.",
+    "canonical_example": {
+      "symbol": "IT",
+      "signal_date": "2026-02-03",
+      "entry_time_et": "10:30",
+      "entry_price": 157.165,
+      "stored_exit": {"reason": "TIME", "gross_bps": 3037},
+      "reference_exit": {"reason": "TP", "gross_bps": 82.56}
+    }
+  },
+  "c_scaled_baseline_51db4f14": {
+    "run_uuid": "51db4f14-e757-40ef-8864-3504f3b25b26",
+    "stored_total_bps": 44641.46,
+    "reference_total_bps": 16648.84,
+    "contamination_bps": -31923.04,
+    "contamination_pct": 0.78,
+    "n_trades_audited": 1760,
+    "n_trades_usable": 1722,
+    "n_trades_no_data": 38,
+    "n_reason_mismatches": 586,
+    "n_suspect_time_exits": 481,
+    "n_invariant_violations": 0,
+    "exit_reason_transitions": {
+      "TP→TP": 903, "SL→SL": 263, "TIME→NO_DATA": 38,
+      "TIME→TP": 390, "TIME→SL": 149, "TIME→TIME": 8,
+      "TP→SL": 3, "SL→TP": 6
+    },
+    "audit_pack_filename": "backtest_audit_51db4f14_20260424T002754Z.zip"
+  },
+  "corrected_baseline_stats": {
+    "total_bps": 12613,
+    "avg_per_trade_bps": 7.3,
+    "win_rate_pct": 75.5,
+    "branches": {
+      "gap_open": {"n": 827, "total_bps": 8577, "avg_bps": 10.4, "tp_bps": 75, "sl_bps": 100, "position_size": 1.0},
+      "gap_filled_half": {"n": 895, "total_bps": 4036, "avg_bps": 4.5, "tp_bps": 50, "sl_bps": 150, "position_size": 0.5}
+    },
+    "quarterly": {
+      "Q1_Apr2024_Feb2025": {"total_bps": 3158, "avg_bps": 7.2},
+      "Q2_Feb2025_Apr2025": {"total_bps": 6270, "avg_bps": 14.9},
+      "Q3_Apr2025_Oct2025": {"total_bps": 217, "avg_bps": 0.5, "note": "near-zero edge for 6 months"},
+      "Q4_Feb2026_Apr2026": {"total_bps": 2967, "avg_bps": 6.9}
+    },
+    "branch_negative_quarters": {
+      "gap_open": ["Q3"],
+      "gap_filled_half": ["Q4"]
+    }
+  },
+  "filter_candidates_clean_data": {
+    "note": "All tested on train/test split at median date (Apr 2025). Negative deltas indicate filter loses P&L.",
+    "artifacts_of_buggy_data_do_not_use": [
+      {"filter": "dist_to_prev_close_bps > 100", "train_delta": -2897, "test_delta": -2413},
+      {"filter": "gap_pct > 0", "train_delta": -2961, "test_delta": -1334},
+      {"filter": "intraday_range_position > 0.8", "train_delta": -2011, "test_delta": -599}
+    ],
+    "survived_cleaning": [
+      {"filter": "spy_momentum <= 0", "train_delta": -1044, "test_delta": 1437, "note": "regime-specific, hurts train"},
+      {"filter": "spy_mom<=0 AND dist_prev_close<0", "train_delta": -60, "test_delta": 2063, "note": "strongest combo; near-flat train"},
+      {"filter": "exclude_MPWR", "delta_total": 332, "note": "persistent negative both years"},
+      {"filter": "exclude_MPWR_STX_CIEN", "delta_total": 1300, "note": "STX and CIEN only one-year negative"}
+    ],
+    "recommended_stack": {
+      "formula": "KEEP if ((symbol != MPWR) AND (spy_momentum > 0 OR dist_to_prev_close_bps >= 0))",
+      "drop_pct": 14.3,
+      "new_total_bps": 14497,
+      "improvement_bps": 1885,
+      "improvement_pct": 15,
+      "quarterly_deltas": {"Q1": 306, "Q2": -457, "Q3": 1663, "Q4": 372}
+    },
+    "regime_only_alternative": {
+      "formula": "KEEP if (spy_momentum > 0 OR dist_to_prev_close_bps >= 0)",
+      "drop_pct": 12.5,
+      "new_total_bps": 14616,
+      "improvement_bps": 2003,
+      "implementation": "feature regime_ok added in v0.7.7; use as predicate regime_ok == 1"
+    }
+  },
+  "compounded_returns_filter_A_plus_B": {
+    "note": "Sequential trade-level compounding. Overstates reality slightly because same-day trades don't actually compound.",
+    "N5_20pct_per_trade":  {"2yr_pct": 33.5, "annualized_pct": 15.5, "max_dd_pct": -4.3},
+    "N10_10pct_per_trade": {"2yr_pct": 15.6, "annualized_pct":  7.5, "max_dd_pct": -2.2},
+    "N15_6_7pct_per_trade":{"2yr_pct": 10.1, "annualized_pct":  4.9, "max_dd_pct": -1.5},
+    "N20_5pct_per_trade":  {"2yr_pct":  7.5, "annualized_pct":  3.7, "max_dd_pct": -1.1}
+  },
+  "trade_concurrency_distribution": {
+    "median_per_day": 2,
+    "mean_per_day": 4.4,
+    "p95_per_day": 13,
+    "max_per_day": 146,
+    "max_day_date": "2025-04-07",
+    "max_day_reason": "tariff-shock; rule fired on essentially the full IT sector"
+  },
+  "immediate_next_steps_after_v0_7_7_deploy": [
+    "Verify /info shows version 0.7.7",
+    "Recompute IT sector full range (regime_ok needs to populate)",
+    "Run baseline backtest: existing rule, timestop_et=15:50",
+    "Run +regime backtest: rule + regime_ok==1 predicate, timestop_et=15:50",
+    "Run +regime +no_timestop backtest: same rule, empty timestop",
+    "Compare (b) and (c) vs (a); verify (b) matches predicted +2000 bps improvement",
+    "Optionally: click repair on 51db4f14 to make corrected baseline durable in prod DB"
+  ],
+  "open_design_questions": [
+    "Daily signal cap implementation (the April 7 2025 146-signal day is a real tail-risk)",
+    "38 NO_DATA trades: recover via re-backfill on specific dates",
+    "Q3 2025 edge collapse: structural? regime? needs investigation",
+    "Re-validate rule variants (C-scaled vs C-simple vs 75bps-alone vs 50bps-alone) on clean data"
+  ]
+}

@@ -1,0 +1,1447 @@
+"""
+FastAPI layer for the Tech Collector.
+
+Endpoints:
+    GET  /health                      — liveness check (Render uses this)
+    GET  /                             — service info
+    GET  /sectors                      — list of supported GICS sectors
+    GET  /sector-status                — per-sector data coverage summary
+    POST /backfill                     — kick off bar backfill (async)
+    POST /compute                      — kick off feature compute (async)
+    POST /pack                         — build evidence pack (sync, < 30s)
+    POST /export-scan-rows             — scan-rows CSV zip (sync)
+    POST /export-scan-rows-parquet     — scan-rows Parquet single file (sync)
+    POST /generate-research-pack       — one-click backfill+compute+export (async)
+    POST /validate                     — validate computed rows (sync)
+    GET  /jobs/{job_id}                — poll job status
+    GET  /jobs                         — list all jobs
+    GET  /packs                        — list available evidence packs
+    GET  /packs/{filename}             — download an evidence pack zip
+
+Auth: all endpoints except /health, /, /info, and /sectors require an
+X-API-Key header matching the API_KEY environment variable.
+"""
+from __future__ import annotations
+
+import logging
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Header, Depends, UploadFile, File
+from fastapi.responses import FileResponse, HTMLResponse
+from pydantic import BaseModel, Field
+
+from . import (
+    backtest, collector, config, exporter, feature_computer, jobs,
+    rule_tester, storage, validate,
+)
+from .universes import SECTOR_UNIVERSES
+
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="Tech Collector",
+    version=config.APP_VERSION,
+    description=(
+        "Backfill-only evidence-pack generator for S&P 500 IT intraday "
+        "research. Pulls Alpaca SIP bars, computes research-schema features, "
+        "exports zipped evidence packs."
+    ),
+)
+
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+def _require_api_key(x_api_key: str | None = Header(default=None)):
+    expected = os.environ.get(config.API_KEY_ENV)
+    if not expected:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Server not configured: {config.API_KEY_ENV} env var not set. "
+                "Set it in Render dashboard."
+            ),
+        )
+    if x_api_key != expected:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
+
+
+# ---------------------------------------------------------------------------
+# Schemas
+# ---------------------------------------------------------------------------
+class DateRange(BaseModel):
+    start: str = Field(..., description="YYYY-MM-DD")
+    end: str = Field(..., description="YYYY-MM-DD")
+    sector: str | None = Field(
+        default=None,
+        description=(
+            "GICS sector name (e.g. 'Information Technology'). "
+            "If omitted, server falls back to DEFAULT_SECTOR env var."
+        ),
+    )
+
+
+class ValidateRequest(BaseModel):
+    research_csv_path: str = Field(
+        ..., description="Path on Render disk to reference tech_research_dataset.csv"
+    )
+    sample: int = 500
+    sector: str | None = Field(
+        default=None,
+        description=(
+            "GICS sector filter applied to computed rows before comparison. "
+            "If omitted, server falls back to DEFAULT_SECTOR env var."
+        ),
+    )
+
+
+class ResearchPackRequest(BaseModel):
+    start: str = Field(..., description="YYYY-MM-DD")
+    end: str = Field(..., description="YYYY-MM-DD")
+    sector: str | None = Field(
+        default=None,
+        description=(
+            "GICS sector. Ignored when run_all_sectors=True."
+        ),
+    )
+    run_all_sectors: bool = Field(
+        default=False,
+        description=(
+            "If True, iterate all 11 GICS sectors in sequence. Long-running "
+            "(hours). One pack per sector is produced."
+        ),
+    )
+
+
+# -- Rule tester request schemas --
+class PredicateSchema(BaseModel):
+    feature: str
+    op: str = Field(..., description="one of: >, >=, <, <=, ==, !=")
+    value: float
+
+
+class RuleSchema(BaseModel):
+    id: str
+    sector: str
+    target: str
+    predicates: list[PredicateSchema]
+    notes: str = ""
+
+
+class TestRulesRequest(BaseModel):
+    rules: list[RuleSchema]
+    start: str | None = Field(
+        default=None,
+        description="YYYY-MM-DD. If omitted, uses all available data for each rule's sector.",
+    )
+    end: str | None = Field(default=None, description="YYYY-MM-DD")
+    n_folds: int = Field(
+        default=5,
+        description="Number of rolling-origin folds. 0 to skip fold analysis.",
+    )
+    fold_mode: str = Field(
+        default="expanding_window",
+        description=(
+            "Fold generation strategy. 'expanding_window' uses n_folds "
+            "contiguous time slices. 'year_based' uses one fold per calendar "
+            "year (ignores n_folds); correct for multi-year data."
+        ),
+    )
+    apply_filters: bool = Field(
+        default=True,
+        description="Apply the standard row-level filters (drop 09:30, thin-tape).",
+    )
+    track: bool = Field(
+        default=False,
+        description="If True, persist each rule to tracked_rules and record this run in rule_test_runs.",
+    )
+    save_csv: bool = Field(
+        default=True,
+        description="If True, save a flat per-rule CSV to evidence_packs for download.",
+    )
+    regime_min_lift: float = Field(
+        default=1.3,
+        description=(
+            "Lift threshold for the regime_consistent flag in the fold summary. "
+            "A rule is regime-consistent when its OOS lift >= this value in "
+            "≥80% of folds. Default 1.3 (was 1.0 in v0.5.0 — too permissive; "
+            "a rule barely beating the base rate shouldn't be flagged "
+            "indistinguishably from a strong rule)."
+        ),
+    )
+
+
+class ChainedBackfillRequest(BaseModel):
+    start: str = Field(..., description="YYYY-MM-DD, inclusive")
+    end: str = Field(..., description="YYYY-MM-DD, inclusive")
+    sector: str = Field(..., description="GICS sector name")
+    months_per_segment: int = Field(
+        default=6,
+        description=(
+            "Segment width. 6 is the Render-safe default (matches /backfill "
+            "for single-segment parity); smaller values give more granular "
+            "progress updates at the cost of more orchestration overhead."
+        ),
+    )
+    discard_raw_bars: bool = Field(
+        default=True,
+        description=(
+            "If True, delete raw_bars for the segment's date range after "
+            "compute succeeds. Keeps DB size bounded. SPY bars are preserved. "
+            "Re-computing features on discarded data requires re-backfilling."
+        ),
+    )
+
+
+class TrackRuleRequest(BaseModel):
+    rules: list[RuleSchema]
+
+
+class RetireRuleRequest(BaseModel):
+    rule_id: str
+
+
+def _resolve_sector(requested: str | None) -> str:
+    """Resolve a sector name to a validated, server-known sector.
+
+    Falls back to config.DEFAULT_SECTOR if none provided. Raises HTTP 400
+    if the requested sector isn't one of the 11 GICS sectors on record.
+    """
+    resolved = requested or config.DEFAULT_SECTOR
+    if resolved not in SECTOR_UNIVERSES:
+        known = sorted(SECTOR_UNIVERSES.keys())
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown sector {resolved!r}. Known sectors: {known}",
+        )
+    return resolved
+
+
+# ---------------------------------------------------------------------------
+# Public endpoints
+# ---------------------------------------------------------------------------
+@app.get("/health")
+def health():
+    """Liveness check — always returns 200 if the process is up."""
+    return {"status": "ok", "version": config.APP_VERSION}
+
+
+@app.get("/", response_class=HTMLResponse)
+def root():
+    """Dashboard UI — served when a browser hits the root."""
+    html_path = Path(__file__).parent / "static" / "index.html"
+    if not html_path.exists():
+        # Fallback if the static file was lost during deploy
+        return HTMLResponse(
+            "<h1>Tech Collector</h1><p>Dashboard HTML missing. "
+            "See <a href='/info'>/info</a> for service status.</p>",
+            status_code=200,
+        )
+    return HTMLResponse(html_path.read_text(encoding="utf-8"))
+
+
+@app.get("/source-version")
+def source_version():
+    """v0.7.9: report SHA256 of loaded module source files. Diagnostic for
+    "is the deploy actually serving the new code?" If the deploy mechanism
+    didn't replace backtest.py or feature_computer.py, this endpoint will
+    return a stale hash that doesn't match the local development copy.
+
+    Returns hashes for the modules that have had material engine changes:
+    backtest.py, feature_computer.py, api.py, storage.py, backtest_audit.py.
+    Also returns the file path each module was actually loaded from, so a
+    deploy mismatch is visible.
+
+    Auth: public; the SHA256 of source code is not sensitive.
+    """
+    import hashlib
+    import inspect
+    from . import backtest as _bt
+    from . import feature_computer as _fc
+    from . import storage as _st
+    from . import backtest_audit as _ba
+
+    out = {
+        "version": config.APP_VERSION,
+        "modules": {},
+    }
+    for name, mod in [
+        ("backtest", _bt),
+        ("feature_computer", _fc),
+        ("api", __import__("tech_collector.api", fromlist=["api"])),
+        ("storage", _st),
+        ("backtest_audit", _ba),
+    ]:
+        try:
+            src_path = inspect.getsourcefile(mod) or "<unknown>"
+            with open(src_path, "rb") as f:
+                src = f.read()
+            out["modules"][name] = {
+                "path": src_path,
+                "size_bytes": len(src),
+                "sha256": hashlib.sha256(src).hexdigest(),
+            }
+        except Exception as e:
+            out["modules"][name] = {"error": str(e)}
+    # Also report what _utc_hour_to_et resolves to — if it's the noop
+    # trap, v0.7.8+ source is loaded; if it's the live function, older.
+    try:
+        fn = getattr(_bt, "_utc_hour_to_et", None)
+        out["utc_hour_to_et_check"] = {
+            "exists": fn is not None,
+            "name": getattr(fn, "__name__", None) if fn else None,
+            "is_v078_trap": (
+                getattr(fn, "__name__", "") == "_dead_removed_utc_hour_to_et_noop"
+                if fn else False
+            ),
+        }
+    except Exception as e:
+        out["utc_hour_to_et_check"] = {"error": str(e)}
+    return out
+
+
+@app.get("/info")
+def info():
+    """Service info as JSON (moved from / to make room for the dashboard)."""
+    return {
+        "app": config.APP_NAME,
+        "version": config.APP_VERSION,
+        "default_sector": config.DEFAULT_SECTOR,
+        "default_universe_size": len(config.UNIVERSE),
+        "supported_sectors": list(config.SUPPORTED_SECTORS),
+        "mode": "backfill-only",
+        "data_dir": os.environ.get("DATA_DIR", "."),
+        "endpoints": {
+            "dashboard": "GET /",
+            "health": "GET /health",
+            "info": "GET /info",
+            "source-version": "GET /source-version  (v0.7.9, deploy verification)",
+            "sectors": "GET /sectors",
+            "sector-status": "GET /sector-status",
+            "backfill": "POST /backfill  (async, returns job_id)",
+            "backfill-chained": "POST /backfill-chained  (v0.5.0, async, multi-year chained)",
+            "compute":  "POST /compute   (async, returns job_id)",
+            "pack":     "POST /pack      (sync)",
+            "export-scan-rows": "POST /export-scan-rows  (sync, zip)",
+            "export-scan-rows-parquet": "POST /export-scan-rows-parquet  (sync, single file)",
+            "generate-research-pack": "POST /generate-research-pack  (async, one-click)",
+            "validate": "POST /validate  (sync)",
+            "upload-reference": "POST /upload-reference  (multipart)",
+            "rules-test":    "POST /rules/test           (v0.4.0, sync, returns JSON + CSV download)",
+            "rules-track":   "POST /rules/track          (v0.4.0, persist without testing)",
+            "rules-retire":  "POST /rules/retire         (v0.4.0)",
+            "rules-tracked": "GET  /rules/tracked        (v0.4.0, list active rules)",
+            "rules-history": "GET  /rules/{id}/history   (v0.4.0, decay tracking)",
+            "jobs":     "GET /jobs/{id}  or  GET /jobs",
+            "packs":    "GET /packs  or  GET /packs/{filename}",
+        },
+    }
+
+
+@app.get("/sectors")
+def sectors():
+    """List the 11 supported GICS sectors with their universe sizes.
+
+    Public (no auth) so the dashboard dropdown can populate itself without
+    requiring an API key; the sector names themselves are not sensitive.
+    """
+    return {
+        "default_sector": config.DEFAULT_SECTOR,
+        "sectors": [
+            {"name": name, "symbol_count": len(tickers)}
+            for name, tickers in SECTOR_UNIVERSES.items()
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Authenticated endpoints
+# ---------------------------------------------------------------------------
+@app.post("/backfill", dependencies=[Depends(_require_api_key)])
+def backfill(rng: DateRange):
+    """Start a backfill job. Returns immediately with job_id; poll /jobs/{id}."""
+    resolved_sector = _resolve_sector(rng.sector)
+    job = jobs.registry.create(
+        "backfill",
+        params={"start": rng.start, "end": rng.end, "sector": resolved_sector},
+    )
+    jobs.registry.run_async(
+        job, collector.collect_range,
+        start_date=rng.start, end_date=rng.end, db_path=config.DB_PATH,
+        sector=resolved_sector,
+    )
+    return {"job_id": job.job_id, "status": "started",
+            "sector": resolved_sector,
+            "poll": f"/jobs/{job.job_id}"}
+
+
+@app.post("/backfill-chained", dependencies=[Depends(_require_api_key)])
+def backfill_chained(req: ChainedBackfillRequest):
+    """Chained multi-year backfill: loop backfill → compute in contiguous segments.
+
+    Designed for Render Pro Plus tier, which can run multi-hour jobs without
+    idle-kill. Each segment runs backfill+compute, then optionally discards
+    raw_bars to keep DB size bounded. Research rows are committed per
+    segment, so a partial run leaves valid data for completed segments.
+
+    Returns immediately with a job_id. The job object's params track the
+    total segment count; progress shows up in /jobs/{id} via the underlying
+    collector/feature_computer return values captured per segment.
+    """
+    resolved_sector = _resolve_sector(req.sector)
+    # Validate the date range up front — gives a 400 instead of an async
+    # failure if the user typo'd the dates.
+    try:
+        segments = exporter._month_segments(
+            req.start, req.end, months_per_segment=req.months_per_segment,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not segments:
+        raise HTTPException(
+            status_code=400,
+            detail=f"no segments produced for range {req.start}..{req.end}",
+        )
+
+    job = jobs.registry.create(
+        "backfill-chained",
+        params={
+            "start": req.start, "end": req.end, "sector": resolved_sector,
+            "months_per_segment": req.months_per_segment,
+            "discard_raw_bars": req.discard_raw_bars,
+            "n_segments": len(segments),
+            "segment_boundaries": segments,
+        },
+    )
+    jobs.registry.run_async(
+        job, exporter.chained_long_backfill,
+        start_date=req.start, end_date=req.end, sector=resolved_sector,
+        db_path=config.DB_PATH,
+        months_per_segment=req.months_per_segment,
+        discard_raw_bars=req.discard_raw_bars,
+    )
+    return {
+        "job_id": job.job_id, "status": "started",
+        "sector": resolved_sector,
+        "n_segments": len(segments),
+        "first_segment": list(segments[0]),
+        "last_segment": list(segments[-1]),
+        "discard_raw_bars": req.discard_raw_bars,
+        "poll": f"/jobs/{job.job_id}",
+        "estimated_wall_minutes": len(segments) * 30,  # rough, 30 min/segment
+    }
+
+
+@app.post("/compute", dependencies=[Depends(_require_api_key)])
+def compute(rng: DateRange):
+    """Start a compute job (raw bars -> research rows). Returns job_id."""
+    resolved_sector = _resolve_sector(rng.sector)
+    job = jobs.registry.create(
+        "compute",
+        params={"start": rng.start, "end": rng.end, "sector": resolved_sector},
+    )
+    jobs.registry.run_async(
+        job, feature_computer.compute_range,
+        start_date=rng.start, end_date=rng.end, db_path=config.DB_PATH,
+        sector=resolved_sector,
+    )
+    return {"job_id": job.job_id, "status": "started",
+            "sector": resolved_sector,
+            "poll": f"/jobs/{job.job_id}"}
+
+
+@app.post("/pack", dependencies=[Depends(_require_api_key)])
+def pack(rng: DateRange):
+    """Export an evidence pack zip for a date range. Synchronous (fast)."""
+    resolved_sector = _resolve_sector(rng.sector)
+    try:
+        path = exporter.export_pack(
+            start_date=rng.start, end_date=rng.end,
+            out_dir=config.EVIDENCE_PACK_DIR, db_path=config.DB_PATH,
+            sector=resolved_sector,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Pack failed: {e}")
+    return {
+        "pack_path": str(path),
+        "pack_filename": path.name,
+        "sector": resolved_sector,
+        "download_url": f"/packs/{path.name}",
+    }
+
+
+@app.post("/export-scan-rows", dependencies=[Depends(_require_api_key)])
+def export_scan_rows_endpoint(rng: DateRange):
+    """Export a small zip containing only the scan-row CSV (no raw bars).
+
+    Purpose: cross-month pattern analysis. Fits in one Claude upload for
+    any realistic date range — ~1 MB per month of data.
+    """
+    resolved_sector = _resolve_sector(rng.sector)
+    try:
+        path = exporter.export_scan_rows(
+            start_date=rng.start, end_date=rng.end,
+            out_dir=config.EVIDENCE_PACK_DIR, db_path=config.DB_PATH,
+            sector=resolved_sector,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Export failed: {e}")
+    size_bytes = path.stat().st_size
+    return {
+        "pack_path": str(path),
+        "pack_filename": path.name,
+        "sector": resolved_sector,
+        "download_url": f"/packs/{path.name}",
+        "size_bytes": size_bytes,
+        "size_mb": round(size_bytes / 1_000_000, 2),
+    }
+
+
+@app.post("/export-scan-rows-parquet", dependencies=[Depends(_require_api_key)])
+def export_scan_rows_parquet_endpoint(rng: DateRange):
+    """Export scan rows as a single Parquet file (no zip wrapper).
+
+    Use this instead of /export-scan-rows when you want one small file
+    suitable for direct upload to Claude. Parquet compresses this schema
+    ~10x vs CSV so a full 2yr sector export typically lands in 8-15 MB.
+    """
+    resolved_sector = _resolve_sector(rng.sector)
+    try:
+        path = exporter.export_scan_rows_parquet(
+            start_date=rng.start, end_date=rng.end,
+            out_dir=config.EVIDENCE_PACK_DIR, db_path=config.DB_PATH,
+            sector=resolved_sector,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Export failed: {e}")
+    size_bytes = path.stat().st_size
+    return {
+        "pack_path": str(path),
+        "pack_filename": path.name,
+        "sector": resolved_sector,
+        "download_url": f"/packs/{path.name}",
+        "size_bytes": size_bytes,
+        "size_mb": round(size_bytes / 1_000_000, 2),
+    }
+
+
+@app.post("/generate-research-pack", dependencies=[Depends(_require_api_key)])
+def generate_research_pack_endpoint(req: ResearchPackRequest):
+    """One-click: backfill -> compute -> parquet export, for a sector.
+
+    Async — returns a job_id to poll. The underlying orchestrator skips
+    backfill and compute when the DB already has >=95% coverage for the
+    requested (sector, date range), so repeated clicks are cheap once
+    the data is in place.
+
+    If run_all_sectors=True, iterates all 11 GICS sectors serially.
+    Expect 6-10 hours for a cold-DB, full-range, all-sectors run.
+    """
+    if req.run_all_sectors:
+        job = jobs.registry.create(
+            "generate-all-sectors",
+            params={"start": req.start, "end": req.end,
+                    "run_all_sectors": True},
+        )
+        jobs.registry.run_async(
+            job, exporter.generate_research_pack_all_sectors,
+            start_date=req.start, end_date=req.end,
+            db_path=config.DB_PATH, out_dir=config.EVIDENCE_PACK_DIR,
+        )
+        return {"job_id": job.job_id, "status": "started",
+                "scope": "all_sectors",
+                "poll": f"/jobs/{job.job_id}"}
+
+    resolved_sector = _resolve_sector(req.sector)
+    job = jobs.registry.create(
+        "generate-research-pack",
+        params={"start": req.start, "end": req.end,
+                "sector": resolved_sector},
+    )
+    jobs.registry.run_async(
+        job, exporter.generate_research_pack,
+        start_date=req.start, end_date=req.end,
+        sector=resolved_sector,
+        db_path=config.DB_PATH, out_dir=config.EVIDENCE_PACK_DIR,
+    )
+    return {"job_id": job.job_id, "status": "started",
+            "sector": resolved_sector,
+            "poll": f"/jobs/{job.job_id}"}
+
+
+@app.get("/sector-status")
+def sector_status():
+    """Per-sector data coverage summary.
+
+    Public (no auth) so the dashboard can render the sector dropdown with
+    "backfilled through <date>" labels without requiring the API key.
+    Returns one entry per GICS sector. Sectors with no data get
+    row_count=0 and null dates.
+    """
+    from .universes import SECTOR_UNIVERSES
+    with storage.connect(config.DB_PATH) as conn:
+        present = {s["sector"]: s for s in storage.sector_status(conn)}
+    out = []
+    for name, tickers in SECTOR_UNIVERSES.items():
+        if name in present:
+            entry = dict(present[name])
+            entry["symbol_count"] = len(tickers)
+            entry["has_data"] = True
+        else:
+            entry = {
+                "sector": name, "earliest_date": None, "latest_date": None,
+                "row_count": 0, "symbol_count": len(tickers), "has_data": False,
+                "null_target_peak_50bps": 0, "null_target_peak_75bps": 0,
+            }
+        out.append(entry)
+    return {"sectors": out}
+
+
+# ---------------------------------------------------------------------------
+# Rule tester endpoints (v0.4.0)
+# ---------------------------------------------------------------------------
+@app.post("/rules/test", dependencies=[Depends(_require_api_key)])
+def rules_test(req: TestRulesRequest):
+    """Evaluate a rule bundle against stored scan rows.
+
+    Each rule specifies its own (sector, target), so a single call can test
+    rules across multiple sectors. Reads from the collector's SQLite
+    directly — no need to upload a pack.
+
+    Returns the full JSON result. When `save_csv=True` (default), also
+    writes a flat per-rule CSV to the evidence_packs directory and
+    includes a download_url in the response. The CSV is the right format
+    to share back into a Claude analysis session.
+    """
+    try:
+        rules = [rule_tester.Rule.from_dict(r.model_dump()) for r in req.rules]
+    except (ValueError, KeyError) as e:
+        raise HTTPException(status_code=400, detail=f"Bad rule: {e}")
+
+    # Rules may span multiple sectors; load scan rows per-sector and pass the
+    # combined frame to test_rule_bundle, which re-filters per rule anyway.
+    sectors_needed = sorted({r.sector for r in rules})
+    frames = []
+    for sector in sectors_needed:
+        try:
+            df_s = rule_tester.load_scan_rows_from_db(
+                config.DB_PATH, sector,
+                start_date=req.start, end_date=req.end,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Load failed for {sector!r}: {e}")
+        if df_s.empty:
+            logger.warning(f"no scan rows for sector={sector!r} in range")
+        frames.append(df_s)
+    import pandas as pd
+    df_all = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+    try:
+        result = rule_tester.test_rule_bundle(
+            rules=rules,
+            df=df_all,
+            n_folds=req.n_folds,
+            fold_mode=req.fold_mode,
+            apply_filters=req.apply_filters,
+            regime_min_lift=req.regime_min_lift,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Test failed: {e}")
+
+    if req.track:
+        try:
+            for rule in rules:
+                rule_tester.track_rule(config.DB_PATH, rule)
+            rule_tester.record_test_run(config.DB_PATH, result)
+        except Exception as e:
+            # Don't fail the response just because tracking failed; flag it.
+            result["tracking_error"] = f"{type(e).__name__}: {e}"
+
+    if req.save_csv:
+        try:
+            import pandas as pd
+            # Build a flat per-rule summary row: one row per rule per fold,
+            # plus an "overall" row per rule. This is the CSV that gets
+            # shared back into Claude.
+            rows = []
+            for entry in result.get("rules", []):
+                if "error" in entry:
+                    rows.append({
+                        "rule_id": entry["rule_id"], "scope": "overall",
+                        "error": entry["error"],
+                    })
+                    continue
+                base = {
+                    "rule_id": entry["rule_id"],
+                    "sector": entry["rule"]["sector"],
+                    "target": entry["rule"]["target"],
+                    "predicates": "; ".join(
+                        f"{p['feature']}{p['op']}{p['value']}"
+                        for p in entry["rule"]["predicates"]
+                    ),
+                    "n_rows_evaluated": entry.get("n_rows_evaluated"),
+                    "data_start": entry.get("date_range", [None, None])[0],
+                    "data_end": entry.get("date_range", [None, None])[1],
+                }
+                ov = entry.get("overall", {})
+                fd = entry.get("filter_diagnostics", {}) or {}
+                rows.append({**base, "scope": "overall",
+                             "support": ov.get("support"),
+                             "precision": ov.get("precision"),
+                             "lift": ov.get("lift"),
+                             "base_rate": ov.get("base_rate"),
+                             "days_firing": ov.get("days_firing"),
+                             "max_day_fraction": ov.get("max_day_fraction"),
+                             "specificity": ov.get("specificity"),
+                             "probability_shift": ov.get("probability_shift"),
+                             "recall": ov.get("recall"),
+                             # v0.5.1: surface filter diagnostics on the
+                             # overall row so the CSV has everything needed
+                             # to diagnose a silent-drop issue without
+                             # re-running.
+                             "rows_input": fd.get("rows_input"),
+                             "rows_with_null_target": fd.get("rows_with_null_target"),
+                             "rows_dropped_0930": fd.get("rows_dropped_0930"),
+                             "rows_dropped_thin_tape": fd.get("rows_dropped_thin_tape"),
+                             "rows_final": fd.get("rows_final"),
+                             "warning": fd.get("warning", ""),
+                             })
+                for f in entry.get("folds", []):
+                    ofold = f.get("oos", {})
+                    rows.append({**base,
+                                 "scope": f"fold_{f['fold']}_oos",
+                                 "fold_label": f.get("fold_label", ""),
+                                 "fold_train_span": f"{f['train_span'][0]}..{f['train_span'][1]}",
+                                 "fold_oos_span": f"{f['oos_span'][0]}..{f['oos_span'][1]}",
+                                 "support": ofold.get("support"),
+                                 "precision": ofold.get("precision"),
+                                 "lift": ofold.get("lift"),
+                                 "base_rate": ofold.get("base_rate"),
+                                 "days_firing": ofold.get("days_firing"),
+                                 "max_day_fraction": ofold.get("max_day_fraction"),
+                                 "specificity": ofold.get("specificity"),
+                                 "probability_shift": ofold.get("probability_shift"),
+                                 "recall": ofold.get("recall"),
+                                 })
+                fs = entry.get("fold_summary")
+                if fs:
+                    rows.append({**base, "scope": "fold_summary",
+                                 "precision": fs.get("oos_precision_median"),
+                                 "lift": fs.get("oos_lift_median"),
+                                 "support": fs.get("oos_support_median"),
+                                 "precision_min": fs.get("oos_precision_min"),
+                                 "precision_max": fs.get("oos_precision_max"),
+                                 "lift_min": fs.get("oos_lift_min"),
+                                 "lift_max": fs.get("oos_lift_max"),
+                                 "regime_consistent": fs.get("regime_consistent"),
+                                 })
+            df_out = pd.DataFrame(rows)
+            ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            fname = f"rule_test_{ts}.csv"
+            out_dir = Path(config.EVIDENCE_PACK_DIR)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            fpath = out_dir / fname
+            df_out.to_csv(fpath, index=False)
+            # Also save the full JSON for reproducibility
+            jname = f"rule_test_{ts}.json"
+            jpath = out_dir / jname
+            import json as _json
+            with open(jpath, "w") as f:
+                _json.dump(result, f, indent=2, default=str)
+            result["csv_filename"] = fname
+            result["csv_download_url"] = f"/packs/{fname}"
+            result["json_filename"] = jname
+            result["json_download_url"] = f"/packs/{jname}"
+        except Exception as e:
+            result["csv_error"] = f"{type(e).__name__}: {e}"
+
+    return result
+
+
+@app.post("/rules/track", dependencies=[Depends(_require_api_key)])
+def rules_track(req: TrackRuleRequest):
+    """Persist one or more rules to tracked_rules without running a test."""
+    try:
+        rules = [rule_tester.Rule.from_dict(r.model_dump()) for r in req.rules]
+        for rule in rules:
+            rule_tester.track_rule(config.DB_PATH, rule)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Track failed: {e}")
+    return {"tracked": len(rules), "rule_ids": [r.id for r in rules]}
+
+
+@app.post("/rules/retire", dependencies=[Depends(_require_api_key)])
+def rules_retire(req: RetireRuleRequest):
+    """Mark a tracked rule as retired. Test history is preserved."""
+    try:
+        rule_tester.retire_rule(config.DB_PATH, req.rule_id)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Retire failed: {e}")
+    return {"retired": req.rule_id}
+
+
+@app.get("/rules/tracked", dependencies=[Depends(_require_api_key)])
+def rules_tracked(status: str | None = "active"):
+    """List tracked rules. Pass status=null to list retired too."""
+    return {
+        "rules": rule_tester.list_tracked_rules(config.DB_PATH, status=status),
+    }
+
+
+@app.get("/rules/{rule_id}/history", dependencies=[Depends(_require_api_key)])
+def rules_history(rule_id: str):
+    """Return the list of test runs recorded for a rule, oldest first.
+
+    Each run has its overall precision/lift/support and the fold summary.
+    Use this to watch for rule decay over time.
+    """
+    runs = rule_tester.rule_history(config.DB_PATH, rule_id)
+    if not runs:
+        return {"rule_id": rule_id, "runs": [], "note": "no runs recorded"}
+    return {"rule_id": rule_id, "runs": runs}
+
+
+@app.post("/pack-monthly", dependencies=[Depends(_require_api_key)])
+def pack_monthly(rng: DateRange):
+    """Export one evidence pack per calendar month within [start, end].
+
+    Useful when a full-range pack would exceed Claude's 30MB upload limit.
+    Each monthly pack covers the 1st through the last day of that month,
+    clipped to the requested range.
+
+    Returns a list of pack filenames with their download URLs.
+    """
+    from datetime import date as _date
+    from calendar import monthrange
+    resolved_sector = _resolve_sector(rng.sector)
+    try:
+        start = _date.fromisoformat(rng.start)
+        end = _date.fromisoformat(rng.end)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Bad date: {e}")
+    if start > end:
+        raise HTTPException(status_code=400, detail="start after end")
+
+    results = []
+    errors = []
+    # Iterate by month — year/month tuples
+    y, m = start.year, start.month
+    while (y, m) <= (end.year, end.month):
+        month_first = _date(y, m, 1)
+        month_last = _date(y, m, monthrange(y, m)[1])
+        chunk_start = max(start, month_first)
+        chunk_end = min(end, month_last)
+        try:
+            path = exporter.export_pack(
+                start_date=chunk_start.isoformat(),
+                end_date=chunk_end.isoformat(),
+                out_dir=config.EVIDENCE_PACK_DIR,
+                db_path=config.DB_PATH,
+                sector=resolved_sector,
+            )
+            size_bytes = path.stat().st_size
+            results.append({
+                "month": f"{y:04d}-{m:02d}",
+                "pack_filename": path.name,
+                "download_url": f"/packs/{path.name}",
+                "size_bytes": size_bytes,
+                "size_mb": round(size_bytes / 1_000_000, 2),
+                "date_range": [chunk_start.isoformat(), chunk_end.isoformat()],
+            })
+        except Exception as e:
+            errors.append({
+                "month": f"{y:04d}-{m:02d}",
+                "error": f"{type(e).__name__}: {e}",
+            })
+        # Advance to next month
+        if m == 12:
+            y, m = y + 1, 1
+        else:
+            m += 1
+
+    return {
+        "sector": resolved_sector,
+        "packs": results,
+        "errors": errors,
+        "total_packs": len(results),
+        "total_size_mb": round(sum(r["size_bytes"] for r in results) / 1_000_000, 2),
+    }
+
+
+@app.post("/validate", dependencies=[Depends(_require_api_key)])
+def validate_endpoint(req: ValidateRequest):
+    """Compare computed rows to a reference research CSV on the disk."""
+    resolved_sector = _resolve_sector(req.sector)
+    csv_path = Path(req.research_csv_path)
+    if not csv_path.exists():
+        raise HTTPException(status_code=400, detail=f"CSV not found: {csv_path}")
+    try:
+        report = validate.compare(
+            csv_path, Path(config.DB_PATH), req.sample,
+            sector=resolved_sector,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Validate failed: {e}")
+    bad = [
+        f for f, s in report.get("feature_stats", {}).items()
+        if (s.get("median_rel_diff_pct") or 0) > 1.0
+    ]
+    return {"sector": resolved_sector, "report": report,
+            "features_above_1pct_median_diff": bad,
+            "passed": len(bad) == 0}
+
+
+@app.post("/reset-db", dependencies=[Depends(_require_api_key)])
+def reset_db():
+    """DESTRUCTIVE: delete the SQLite database and re-initialize it.
+    Use when feature definitions have changed and you need to force a
+    fresh backfill. Evidence packs on disk are NOT deleted.
+    """
+    db_path = Path(config.DB_PATH)
+    deleted = []
+    for p in [db_path, Path(str(db_path) + "-wal"), Path(str(db_path) + "-shm")]:
+        if p.exists():
+            p.unlink()
+            deleted.append(str(p))
+    storage.init_schema(config.DB_PATH)
+    return {"deleted": deleted, "reinitialized": str(db_path)}
+
+
+@app.post("/upload-reference", dependencies=[Depends(_require_api_key)])
+async def upload_reference(file: UploadFile = File(...)):
+    """Upload the reference research CSV to the persistent disk so
+    /validate can find it. Single-step replacement for the 'commit to
+    GitHub, then copy in Render Shell' workaround.
+
+    Usage:
+        curl -X POST -H "X-API-Key: ..." \\
+             -F "file=@tech_research_dataset.csv" \\
+             https://YOUR-SERVICE.onrender.com/upload-reference
+    """
+    if not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400,
+                            detail="Only .csv files accepted")
+    # Always save under a fixed name; /validate reads from this path
+    dest = Path(os.environ.get("DATA_DIR", ".")) / "tech_research_dataset.csv"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    # Stream to disk in chunks so large files don't blow up memory
+    total = 0
+    with open(dest, "wb") as out:
+        while True:
+            chunk = await file.read(1 << 20)  # 1 MB chunks
+            if not chunk:
+                break
+            out.write(chunk)
+            total += len(chunk)
+
+    return {
+        "saved_to": str(dest),
+        "size_bytes": total,
+        "original_filename": file.filename,
+        "note": "Use this path in the /validate endpoint: research_csv_path",
+    }
+
+
+@app.get("/jobs/{job_id}", dependencies=[Depends(_require_api_key)])
+def get_job(job_id: str):
+    job = jobs.registry.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job.to_dict()
+
+
+@app.get("/jobs", dependencies=[Depends(_require_api_key)])
+def list_jobs():
+    return [j.to_dict() for j in jobs.registry.list()]
+
+
+@app.get("/packs", dependencies=[Depends(_require_api_key)])
+def list_packs():
+    pack_dir = Path(config.EVIDENCE_PACK_DIR)
+    if not pack_dir.exists():
+        return {"packs": []}
+    # Include zip (full packs), parquet (scan-rows single-file),
+    # csv + json (rule test artifacts)
+    files = sorted(
+        list(pack_dir.glob("*.zip"))
+        + list(pack_dir.glob("*.parquet"))
+        + list(pack_dir.glob("*.csv"))
+        + list(pack_dir.glob("*.json"))
+    )
+    return {
+        "packs": [
+            {
+                "filename": z.name,
+                "size_bytes": z.stat().st_size,
+                "modified_at_utc": datetime.fromtimestamp(
+                    z.stat().st_mtime, tz=timezone.utc
+                ).isoformat(),
+                "download_url": f"/packs/{z.name}",
+            }
+            for z in files
+        ]
+    }
+
+
+@app.get("/packs/{filename}", dependencies=[Depends(_require_api_key)])
+def download_pack(filename: str):
+    # Prevent directory traversal
+    if "/" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = Path(config.EVIDENCE_PACK_DIR) / filename
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Pack not found")
+    media_type = (
+        "application/vnd.apache.parquet"
+        if filename.endswith(".parquet")
+        else "text/csv" if filename.endswith(".csv")
+        else "application/json" if filename.endswith(".json")
+        else "application/zip"
+    )
+    return FileResponse(
+        path, media_type=media_type, filename=filename,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Backtest endpoints (v0.6.0)
+# ---------------------------------------------------------------------------
+class BacktestPredicate(BaseModel):
+    feature: str
+    op: str
+    value: float
+
+
+class BacktestRuleInline(BaseModel):
+    id: str
+    sector: str
+    target: str
+    predicates: list[BacktestPredicate]
+
+
+class ConditionalExitSpec(BaseModel):
+    """v0.7.0: branch of a conditional-exit spec.
+
+    When `feature` compares `op` against `value`, this branch's
+    tp_bps/sl_bps/position_size overrides apply. Branches are evaluated in
+    request order; first match wins. Unmatched signals fall through to the
+    top-level tp_bps/sl_bps at full size.
+    """
+    feature: str = Field(..., description="Feature name to test (e.g. 'gap_filled')")
+    op: str = Field(..., description="Comparison op: == != < <= > >=")
+    value: float = Field(..., description="Value to compare against")
+    tp_bps: float = Field(..., ge=1.0, le=500.0)
+    sl_bps: float = Field(..., ge=1.0, le=1000.0)
+    position_size: float = Field(
+        default=1.0, ge=0.0, le=5.0,
+        description="Size multiplier applied to net_return_bps (1.0 = full).",
+    )
+    label: str = Field(
+        default="",
+        description="Human-readable branch label for reporting (e.g. 'gap_open').",
+    )
+
+
+class BacktestRunRequest(BaseModel):
+    rule: BacktestRuleInline = Field(
+        ...,
+        description=(
+            "Inline rule spec. Use the same format as the rule tester — id, "
+            "sector, target, predicates. Can be copied from a tracked rule "
+            "or constructed fresh."
+        ),
+    )
+    tp_bps: float = Field(
+        ..., ge=1.0, le=500.0,
+        description="Take-profit in bps. 50 = 0.5% above entry.",
+    )
+    sl_bps: float = Field(
+        ..., ge=1.0, le=1000.0,
+        description=(
+            "Stop-loss in bps. 50 = 0.5% drawdown from entry. Wide stops "
+            "(100-300 bps) are intentionally supported — the miss-set analysis "
+            "showed median winning-trade drawdown is 100 bps, so tight stops "
+            "blow out winners."
+        ),
+    )
+    timestop_et: str | None = Field(
+        default="15:50",
+        description=(
+            "HH:MM in ET at/after which we flatten unconditionally. "
+            "v0.7.7: default is now 15:50 (was 15:30) to give late trades "
+            "more room. Pass null (or empty string) to disable the timestop "
+            "entirely — trade only exits on TP or SL. When disabled, if "
+            "neither level is hit by end-of-session bars, the trade exits "
+            "at the last available bar's close as a TIME exit."
+        ),
+    )
+    slippage_bps: float = Field(
+        default=10.0, ge=0.0, le=100.0,
+        description="Round-trip slippage in bps (half applied at entry, half at exit).",
+    )
+    spy_regime_filter: float | None = Field(
+        default=None,
+        description=(
+            "Skip signals when SPY's return since market open is below this "
+            "decimal threshold (e.g. -0.002 for -0.2%). Null = filter off. "
+            "Motivation: miss-set analysis showed misses cluster on SPY-weak "
+            "days; excluding these may reduce drawdown."
+        ),
+    )
+    symbol_exclude: list[str] = Field(
+        default_factory=list,
+        description="List of symbols to exclude entirely (e.g. ['SMCI','LITE']).",
+    )
+    start_date: str | None = Field(default=None, description="YYYY-MM-DD. Defaults to all available.")
+    end_date: str | None = Field(default=None, description="YYYY-MM-DD. Defaults to all available.")
+    just_in_time_backfill: bool = Field(
+        default=True,
+        description=(
+            "If true, pull raw minute bars from Alpaca for any (symbol,date) "
+            "that has a signal but no raw_bars in the DB. Required for most "
+            "historical backtests since raw_bars are typically discarded."
+        ),
+    )
+    delete_raw_bars_after: bool = Field(
+        default=False,
+        description=(
+            "If true, delete raw_bars for each (symbol,date) after simulation. "
+            "Useful for keeping storage proportional to one trading day."
+        ),
+    )
+    conditional_exits: list[ConditionalExitSpec] = Field(
+        default_factory=list,
+        description=(
+            "v0.7.0: conditional TP/SL branches. If non-empty, each signal is "
+            "matched against branches in order; first match wins. "
+            "Example for 'Option C': [{'feature':'gap_filled','op':'==','value':0,"
+            "'tp_bps':75,'sl_bps':100,'position_size':1.0,'label':'gap_open'}] — "
+            "unmatched signals fall through to top-level tp_bps/sl_bps. "
+            "position_size scales net_return_bps (0.5 = half-size trade, 1.0 = full)."
+        ),
+    )
+
+
+@app.get("/backtest/engine-selftest")
+def backtest_engine_selftest():
+    """v0.7.9: directly invoke _simulate_trade with three canonical scenarios
+    and report the results. Independent of stored data, deploy state, or
+    request payload. Detects whether the engine that's loaded is producing
+    phantom-TIME exits.
+
+    Scenario A (TP-then-moon): bars cross TP early; expect TP exit ~75 bps.
+    Scenario B (never-TP, last-close-extreme): expect AssertionError invariant.
+    Scenario C (DST week, March 5 EST): scan_time=10:30 should land on 15:30 UTC bar.
+
+    If A returns TP and B raises AssertionError and C reports correct ET hour,
+    the engine is v0.7.8+. If any scenario fails, deployed code is older.
+
+    Auth: public; runs in-memory only, no DB writes, no risk.
+    """
+    out = {"version": config.APP_VERSION, "scenarios": {}}
+
+    # --- Scenario A: TP early, then moon
+    try:
+        bars_a = [
+            {"timestamp_utc": "2026-02-03T17:30:00Z", "open": 154.7, "high": 154.8, "low": 154.6, "close": 154.7, "volume": 1000},
+            {"timestamp_utc": "2026-02-03T17:31:00Z", "open": 154.7, "high": 156.0, "low": 154.6, "close": 155.5, "volume": 2000},
+            {"timestamp_utc": "2026-02-03T20:00:00Z", "open": 200.0, "high": 202.0, "low": 199.0, "close": 201.84, "volume": 5000},
+        ]
+        result = backtest._simulate_trade(
+            bars=bars_a, entry_ts_utc="2026-02-03T17:30:00Z",
+            entry_price=154.7, tp_level=75.0, sl_level=100.0,
+            timestop_et_hhmm="15:50", slippage_bps=15.0, entry_slippage_split=0.5,
+        )
+        out["scenarios"]["A_tp_then_moon"] = {
+            "exit_reason": result["exit_reason"],
+            "gross_bps": round(result["gross_return_bps"], 2),
+            "exit_time_et": result["exit_time_et"],
+            "minutes_held": result["minutes_held"],
+            "expected": "TP exit, ~75 bps gross, exit_time near 12:31 ET",
+            "passes": (
+                result["exit_reason"] == "TP"
+                and 60 <= result["gross_return_bps"] <= 100
+                and result["exit_time_et"].startswith("12:")
+            ),
+        }
+    except Exception as e:
+        out["scenarios"]["A_tp_then_moon"] = {"error": f"{type(e).__name__}: {e}"}
+
+    # --- Scenario B: never crosses TP/SL intra-bar, last close way above
+    # NOTE: this requires bars where intra-bar high<tp_price and low>sl_price
+    # but final close is far away. Real bars wouldn't do that, but we construct it.
+    try:
+        bars_b = [
+            {"timestamp_utc": "2026-02-03T17:30:00Z", "open": 154.7, "high": 154.8, "low": 154.6, "close": 154.75, "volume": 1000},
+            {"timestamp_utc": "2026-02-03T17:31:00Z", "open": 154.75, "high": 154.85, "low": 154.7, "close": 162.45, "volume": 1000},
+        ]
+        try:
+            result_b = backtest._simulate_trade(
+                bars=bars_b, entry_ts_utc="2026-02-03T17:30:00Z",
+                entry_price=154.7, tp_level=75.0, sl_level=100.0,
+                timestop_et_hhmm="15:50", slippage_bps=15.0, entry_slippage_split=0.5,
+            )
+            out["scenarios"]["B_invariant"] = {
+                "exit_reason": result_b["exit_reason"],
+                "gross_bps": round(result_b["gross_return_bps"], 2),
+                "expected": "AssertionError raised, OR TP exit (if engine re-scans bar high)",
+                "passes": (
+                    result_b["exit_reason"] == "TP"
+                    and result_b["gross_return_bps"] <= 80
+                ),
+                "phantom_detected": (
+                    result_b["exit_reason"] == "TIME"
+                    and result_b["gross_return_bps"] > 80
+                ),
+            }
+        except AssertionError as ae:
+            out["scenarios"]["B_invariant"] = {
+                "exit_reason": "AssertionError",
+                "message": str(ae)[:200],
+                "expected": "AssertionError raised",
+                "passes": True,
+            }
+    except Exception as e:
+        out["scenarios"]["B_invariant"] = {"error": f"{type(e).__name__}: {e}"}
+
+    # --- Scenario C: DST week (March 5 2026 = pre-DST EST)
+    try:
+        bars_c = [
+            {"timestamp_utc": f"2026-03-05T{h:02d}:{m:02d}:00Z",
+             "open": 100.0, "high": 100.1, "low": 99.9, "close": 100.0, "volume": 1000}
+            for h, m in [(14, 30), (14, 45), (15, 0), (15, 15), (15, 30)]
+        ]
+        ts_c = backtest._find_scan_bar_ts(bars_c, "10:30")
+        out["scenarios"]["C_dst_march5"] = {
+            "scan_bar_ts": ts_c,
+            "expected": "2026-03-05T15:30:00Z (10:30 ET in EST)",
+            "passes": ts_c == "2026-03-05T15:30:00Z",
+        }
+    except Exception as e:
+        out["scenarios"]["C_dst_march5"] = {"error": f"{type(e).__name__}: {e}"}
+
+    out["all_pass"] = all(
+        s.get("passes", False) for s in out["scenarios"].values()
+    )
+    return out
+
+
+@app.post("/backtest/run", dependencies=[Depends(_require_api_key)])
+def backtest_run(req: BacktestRunRequest):
+    """Execute a path-dependent backtest and return the summary.
+
+    This is a synchronous endpoint. For typical runs (a few hundred signals,
+    just-in-time backfill disabled because raw_bars are already there) it
+    returns in seconds. For runs that require just-in-time backfill across
+    many (symbol, date) pairs, it can take minutes — each unique day is one
+    Alpaca call.
+    """
+    try:
+        rule = rule_tester.Rule.from_dict({
+            "id": req.rule.id,
+            "sector": req.rule.sector,
+            "target": req.rule.target,
+            "predicates": [p.model_dump() for p in req.rule.predicates],
+        })
+    except (ValueError, KeyError) as e:
+        raise HTTPException(status_code=400, detail=f"Bad rule: {e}")
+
+    cond_branches = [
+        backtest.ConditionalExitBranch(
+            feature=c.feature, op=c.op, value=c.value,
+            tp_bps=c.tp_bps, sl_bps=c.sl_bps,
+            position_size=c.position_size, label=c.label,
+        )
+        for c in req.conditional_exits
+    ]
+    bt_config = backtest.BacktestConfig(
+        rule=rule,
+        tp_bps=req.tp_bps, sl_bps=req.sl_bps,
+        timestop_et=req.timestop_et,
+        slippage_bps=req.slippage_bps,
+        spy_regime_filter=req.spy_regime_filter,
+        symbol_exclude=req.symbol_exclude,
+        start_date=req.start_date, end_date=req.end_date,
+        just_in_time_backfill=req.just_in_time_backfill,
+        delete_raw_bars_after=req.delete_raw_bars_after,
+        conditional_exits=cond_branches,
+    )
+    try:
+        return backtest.run_backtest(bt_config, db_path=config.DB_PATH)
+    except Exception as e:
+        logger.exception("Backtest run failed")
+        raise HTTPException(status_code=500, detail=f"Backtest failed: {e}")
+
+
+@app.get("/backtest/{run_uuid}", dependencies=[Depends(_require_api_key)])
+def backtest_get(run_uuid: str):
+    """Fetch a completed backtest run's summary + aggregate stats."""
+    with storage.connect(config.DB_PATH) as conn:
+        run = storage.get_backtest_run(conn, run_uuid)
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"No backtest run with uuid {run_uuid!r}")
+        trades = storage.get_backtest_trades(conn, run_uuid)
+    return {
+        "run": run,
+        "n_trades": len(trades),
+        "aggregates": backtest.compute_aggregates(trades),
+    }
+
+
+@app.get("/backtest/{run_uuid}/diagnose", dependencies=[Depends(_require_api_key)])
+def backtest_diagnose(run_uuid: str):
+    """Return no_data breakdown + exit-reason mix for an existing run.
+
+    Useful when a run's trades CSV wasn't written at runtime (pre-v0.6.1)
+    or when the user just wants a quick look at why signals didn't simulate.
+    """
+    with storage.connect(config.DB_PATH) as conn:
+        run = storage.get_backtest_run(conn, run_uuid)
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"No backtest run with uuid {run_uuid!r}")
+        trades = storage.get_backtest_trades(conn, run_uuid)
+    return {
+        "run_uuid": run_uuid,
+        "n_trades_total": len(trades),
+        "exit_reason_mix": backtest._count_exits(trades),
+        "no_data_diagnosis": backtest._summarize_no_data(trades),
+    }
+
+
+@app.get("/backtest/{run_uuid}/trades.csv", dependencies=[Depends(_require_api_key)])
+def backtest_trades_csv(run_uuid: str):
+    """Download per-trade CSV for a completed backtest run."""
+    import csv, io
+    with storage.connect(config.DB_PATH) as conn:
+        run = storage.get_backtest_run(conn, run_uuid)
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"No backtest run with uuid {run_uuid!r}")
+        trades = storage.get_backtest_trades(conn, run_uuid)
+    if not trades:
+        raise HTTPException(status_code=404, detail="No trades for this run")
+    out_path = Path(config.EVIDENCE_PACK_DIR) / f"backtest_{run_uuid[:8]}_trades.csv"
+    with open(out_path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(trades[0].keys()))
+        w.writeheader(); w.writerows(trades)
+    return FileResponse(
+        out_path, media_type="text/csv", filename=out_path.name,
+    )
+
+
+@app.get("/backtest", dependencies=[Depends(_require_api_key)])
+def backtest_list(limit: int = 50):
+    """List recent backtest runs (newest first)."""
+    with storage.connect(config.DB_PATH) as conn:
+        runs = storage.list_backtest_runs(conn, limit=limit)
+    return {"runs": runs, "count": len(runs)}
+
+
+# ---------------------------------------------------------------------------
+# Audit + repair (v0.7.1): verify stored backtest outcomes against the
+# canonical reference simulator. Produces evidence pack on divergence.
+# ---------------------------------------------------------------------------
+from . import backtest_audit  # noqa: E402
+
+
+def _audit_job_wrapper(db_path: str, run_uuid: str, jit_backfill: bool) -> dict:
+    """Runs audit and writes the evidence pack; job result holds the summary
+    plus pack filename."""
+    report = backtest_audit.audit_run(
+        db_path=db_path, run_uuid=run_uuid, jit_backfill=jit_backfill,
+    )
+    pack_path = backtest_audit.export_audit_pack(
+        report, Path(config.EVIDENCE_PACK_DIR),
+    )
+    summary = {k: v for k, v in report.items() if k != "trade_results"}
+    summary["pack_filename"] = pack_path.name
+    summary["pack_download_url"] = f"/packs/{pack_path.name}"
+    return summary
+
+
+def _repair_job_wrapper(db_path: str, source_run_uuid: str,
+                        jit_backfill: bool) -> dict:
+    new_uuid = backtest_audit.repair_run(
+        db_path=db_path, source_run_uuid=source_run_uuid,
+        jit_backfill=jit_backfill,
+    )
+    return {
+        "source_run_uuid": source_run_uuid,
+        "new_run_uuid": new_uuid,
+        "trades_csv_url": f"/backtest/{new_uuid}/trades.csv",
+    }
+
+
+@app.post("/backtest/{run_uuid}/audit", dependencies=[Depends(_require_api_key)])
+def backtest_audit_endpoint(run_uuid: str, jit_backfill: bool = True):
+    """Start an async audit of a completed backtest run.
+
+    Auditing 1,000+ trades with JIT backfills can take minutes. The
+    endpoint returns immediately with a job_id; poll /jobs/{id} for
+    status and result. When the job finishes, the result field holds
+    the same summary the old sync endpoint returned.
+    """
+    # Validate run exists BEFORE kicking off the background thread, so a
+    # bad UUID returns a proper 404 instead of a failed job.
+    with storage.connect(config.DB_PATH) as conn:
+        if storage.get_backtest_run(conn, run_uuid) is None:
+            raise HTTPException(status_code=404, detail=f"run {run_uuid} not found")
+
+    job = jobs.registry.create(
+        "backtest_audit",
+        params={"run_uuid": run_uuid, "jit_backfill": jit_backfill},
+    )
+    jobs.registry.run_async(
+        job, _audit_job_wrapper,
+        db_path=config.DB_PATH, run_uuid=run_uuid, jit_backfill=jit_backfill,
+    )
+    return {"job_id": job.job_id, "status": "started",
+            "run_uuid": run_uuid, "poll": f"/jobs/{job.job_id}"}
+
+
+@app.post("/backtest/{run_uuid}/repair", dependencies=[Depends(_require_api_key)])
+def backtest_repair_endpoint(run_uuid: str, jit_backfill: bool = True):
+    """Start an async repair. Returns job_id; poll /jobs/{id}.
+
+    Repair re-simulates every trade in the source run using the canonical
+    reference engine and writes a NEW run_uuid with corrected trades. The
+    original run is never mutated. When the job completes, result.new_run_uuid
+    is the corrected run; download its trades.csv for analysis.
+    """
+    with storage.connect(config.DB_PATH) as conn:
+        if storage.get_backtest_run(conn, run_uuid) is None:
+            raise HTTPException(status_code=404, detail=f"run {run_uuid} not found")
+
+    job = jobs.registry.create(
+        "backtest_repair",
+        params={"source_run_uuid": run_uuid, "jit_backfill": jit_backfill},
+    )
+    jobs.registry.run_async(
+        job, _repair_job_wrapper,
+        db_path=config.DB_PATH, source_run_uuid=run_uuid,
+        jit_backfill=jit_backfill,
+    )
+    return {"job_id": job.job_id, "status": "started",
+            "source_run_uuid": run_uuid, "poll": f"/jobs/{job.job_id}"}
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle
+# ---------------------------------------------------------------------------
+@app.on_event("startup")
+def on_startup():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)-5s %(name)s - %(message)s",
+    )
+    Path(config.EVIDENCE_PACK_DIR).mkdir(parents=True, exist_ok=True)
+    storage.init_schema(config.DB_PATH)
+    storage.init_backtest_schema(config.DB_PATH)
+    jobs.init_jobs_schema(config.DB_PATH, sweep_orphaned=True)
+    logger.info(
+        f"Tech Collector starting. Version={config.APP_VERSION}, "
+        f"default_sector={config.DEFAULT_SECTOR}, "
+        f"DB={config.DB_PATH}, packs={config.EVIDENCE_PACK_DIR}"
+    )

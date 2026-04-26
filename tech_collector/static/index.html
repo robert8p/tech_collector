@@ -1,0 +1,2072 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>tech-collector · ops console</title>
+<style>
+  :root {
+    --bg: #0f1012;
+    --surface: #17181b;
+    --surface-2: #1d1e22;
+    --border: #2a2b30;
+    --border-strong: #3a3b42;
+    --text: #e5e5e5;
+    --text-dim: #9a9b9f;
+    --text-faint: #6b6c72;
+    --accent: #d2a24c;
+    --accent-dim: #8a6b2e;
+    --ok: #7db56c;
+    --warn: #d2a24c;
+    --err: #d26b5c;
+    --running: #6ca0b5;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Menlo", monospace;
+    --serif: "Iowan Old Style", "Palatino", Georgia, serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.55;
+    min-height: 100vh;
+  }
+  body { padding: 28px 32px 60px; max-width: 1200px; margin: 0 auto; }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+    margin-bottom: 28px;
+    display: flex;
+    align-items: baseline;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  h1 {
+    font-family: var(--serif);
+    font-weight: 400;
+    font-style: italic;
+    font-size: 24px;
+    color: var(--accent);
+    letter-spacing: 0.5px;
+  }
+  h1::before { content: "$ "; color: var(--text-faint); font-style: normal; }
+  .subtitle { color: var(--text-dim); font-size: 12px; }
+  .version { color: var(--text-faint); font-size: 11px; margin-left: auto; }
+
+  section {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    margin-bottom: 20px;
+    padding: 18px 22px 22px;
+  }
+  section h2 {
+    font-family: var(--serif);
+    font-style: italic;
+    font-weight: 400;
+    font-size: 15px;
+    color: var(--accent);
+    margin-bottom: 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed var(--border-strong);
+    letter-spacing: 0.3px;
+  }
+  section h2::before { content: "# "; color: var(--text-faint); font-style: normal; }
+  .section-hint {
+    color: var(--text-faint);
+    font-size: 11px;
+    margin-top: -10px;
+    margin-bottom: 16px;
+    font-style: italic;
+    font-family: var(--serif);
+  }
+
+  label { display: block; color: var(--text-dim); font-size: 11px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  input[type="text"], input[type="date"], input[type="password"], input[type="number"], select {
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    padding: 7px 10px;
+    font-family: var(--mono);
+    font-size: 13px;
+    width: 100%;
+    outline: none;
+  }
+  input[type="text"]:focus, input[type="date"]:focus, input[type="password"]:focus, input[type="number"]:focus, select:focus {
+    border-color: var(--accent-dim);
+  }
+  select { appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 24px;
+           background-image: linear-gradient(45deg, transparent 50%, var(--text-dim) 50%),
+                             linear-gradient(135deg, var(--text-dim) 50%, transparent 50%);
+           background-position: calc(100% - 13px) 14px, calc(100% - 8px) 14px;
+           background-size: 5px 5px, 5px 5px;
+           background-repeat: no-repeat; }
+  input[type="file"] { color: var(--text-dim); font-size: 12px; padding: 5px 0; }
+  .row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
+  .row > div { flex: 1; min-width: 160px; }
+
+  button {
+    background: transparent;
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    padding: 7px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    cursor: pointer;
+    letter-spacing: 0.3px;
+    transition: all 0.12s ease;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary { border-color: var(--accent-dim); color: var(--accent); }
+  button.primary:hover:not(:disabled) { background: var(--accent); color: var(--bg); }
+  button.small { padding: 4px 10px; font-size: 11px; }
+
+  .auth-row {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    padding: 12px 16px;
+    margin-bottom: 24px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  .auth-row .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--err); flex-shrink: 0;
+  }
+  .auth-row.authed .status-dot { background: var(--ok); }
+  .auth-row input { flex: 1; }
+  .auth-row .status-label { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .output {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+    margin-top: 10px;
+    font-size: 12px;
+    max-height: 220px;
+    overflow-y: auto;
+    color: var(--text-dim);
+    white-space: pre-wrap;
+    word-break: break-word;
+    display: none;
+  }
+  .output.show { display: block; }
+  .output.err { color: var(--err); border-color: var(--err); }
+  .output.ok { color: var(--ok); }
+
+  .job-item {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    margin-bottom: 8px;
+    background: var(--bg);
+    display: grid;
+    grid-template-columns: 80px 110px 1fr auto;
+    gap: 12px;
+    align-items: center;
+    font-size: 12px;
+  }
+  .job-item.running { border-left: 2px solid var(--running); }
+  .job-item.succeeded { border-left: 2px solid var(--ok); }
+  .job-item.failed { border-left: 2px solid var(--err); }
+  .job-item.pending { border-left: 2px solid var(--text-faint); }
+  .job-kind { font-weight: 500; color: var(--accent); text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+  .job-status.running { color: var(--running); }
+  .job-status.succeeded { color: var(--ok); }
+  .job-status.failed { color: var(--err); }
+  .job-status.pending { color: var(--text-faint); }
+  .job-detail { color: var(--text-faint); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job-time { color: var(--text-faint); font-size: 11px; }
+
+  .pack-item {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    margin-bottom: 8px;
+    background: var(--bg);
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    font-size: 12px;
+  }
+  .pack-name { font-weight: 500; color: var(--text); flex: 1; word-break: break-all; }
+  .pack-meta { color: var(--text-faint); font-size: 11px; }
+
+  .empty-state { color: var(--text-faint); font-style: italic; font-family: var(--serif); padding: 8px 0; font-size: 12px; }
+
+  .spinner {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--running);
+    animation: pulse 1.2s ease-in-out infinite;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+  }
+
+  #toast {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    background: var(--surface-2);
+    border: 1px solid var(--accent-dim);
+    color: var(--text);
+    padding: 10px 16px;
+    font-size: 12px;
+    max-width: 400px;
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+    z-index: 100;
+  }
+  #toast.show { opacity: 1; transform: translateY(0); }
+  #toast.err { border-color: var(--err); color: var(--err); }
+  #toast.ok { border-color: var(--ok); color: var(--ok); }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  ::selection { background: var(--accent); color: var(--bg); }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>tech-collector</h1>
+  <span class="subtitle">evidence-pack ops console</span>
+  <span class="version" id="version-tag">v—</span>
+</header>
+
+<div class="auth-row" id="auth-row">
+  <span class="status-dot" id="auth-dot"></span>
+  <span class="status-label">x-api-key</span>
+  <input type="password" id="api-key" placeholder="paste your API_KEY shared secret">
+  <button id="save-key" class="small">save &amp; verify</button>
+  <button id="clear-key" class="small">clear</button>
+</div>
+
+<section>
+  <h2>reference csv</h2>
+  <p class="section-hint">upload the original tech_research_dataset.csv once. required by /validate.</p>
+  <div class="row">
+    <div style="flex: 3;">
+      <label>file</label>
+      <input type="file" id="csv-file" accept=".csv">
+    </div>
+    <div style="flex: 1;">
+      <button id="upload-ref" class="primary">upload →</button>
+    </div>
+  </div>
+  <div class="output" id="upload-out"></div>
+</section>
+
+<section>
+  <h2>data pipeline</h2>
+  <p class="section-hint">one-click generate chains backfill → compute → export. manual buttons below for partial re-runs.</p>
+  <div class="row">
+    <div style="flex: 2;">
+      <label>sector</label>
+      <select id="sector-select">
+        <option value="">loading sectors…</option>
+      </select>
+    </div>
+    <div style="flex: 1; display: flex; align-items: center; gap: 6px; padding-bottom: 8px;">
+      <input type="checkbox" id="run-all-sectors" style="width: auto;">
+      <label for="run-all-sectors" style="display: inline; text-transform: none; letter-spacing: 0; margin: 0; cursor: pointer;">
+        run all 11 sectors (hours)
+      </label>
+    </div>
+  </div>
+  <div class="row">
+    <div>
+      <label>start date</label>
+      <input type="date" id="start-date" value="2025-03-17">
+    </div>
+    <div>
+      <label>end date</label>
+      <input type="date" id="end-date" value="2025-03-21">
+    </div>
+  </div>
+  <div class="row" style="gap: 6px;">
+    <button class="small preset-btn" data-preset="full">full range</button>
+    <button class="small preset-btn" data-preset="6m">last 6 months</button>
+    <button class="small preset-btn" data-preset="1m">last month</button>
+    <button class="small preset-btn" data-preset="1w">last week</button>
+  </div>
+  <div class="row" style="gap: 8px; margin-top: 16px;">
+    <button id="run-generate" class="primary" style="font-weight: 600;">▶ generate research pack</button>
+  </div>
+  <details style="margin-top: 12px;">
+    <summary style="cursor: pointer; color: var(--text-faint); font-size: 11px; font-style: italic; font-family: var(--serif);">partial re-runs (advanced)</summary>
+    <div class="row" style="gap: 8px; margin-top: 10px;">
+      <button id="run-backfill">backfill only</button>
+      <button id="run-compute">compute only</button>
+      <button id="run-validate">validate</button>
+      <button id="run-pack">pack (zip w/ raw bars)</button>
+      <button id="run-pack-monthly">pack by month</button>
+      <button id="run-export-rows">export scan rows (zip)</button>
+      <button id="run-export-rows-parquet">export scan rows (parquet)</button>
+    </div>
+  </details>
+  <details style="margin-top: 12px;">
+    <summary style="cursor: pointer; color: var(--text-faint); font-size: 11px; font-style: italic; font-family: var(--serif);">long historical backfill (chained, hours)</summary>
+    <p class="section-hint" style="margin-top: 10px;">
+      for multi-year backfills. runs backfill+compute in contiguous 6-month segments, then discards raw_bars per segment to keep DB size bounded. research_rows persist. expect roughly 30 minutes per segment wall-clock. safe to leave running on render pro plus; not designed for free tier.
+    </p>
+    <div class="row" style="gap: 8px; margin-top: 6px;">
+      <div style="flex: 1;">
+        <label>chain start</label>
+        <input type="date" id="chain-start">
+      </div>
+      <div style="flex: 1;">
+        <label>chain end</label>
+        <input type="date" id="chain-end">
+      </div>
+      <div style="flex: 1;">
+        <label>segment width (months)</label>
+        <input type="number" id="chain-segment-width" value="6" min="1" max="12">
+      </div>
+    </div>
+    <div class="row" style="gap: 18px; margin-top: 6px; padding: 0 2px; align-items: center;">
+      <span style="display: flex; align-items: center; gap: 6px;">
+        <input type="checkbox" id="chain-discard" checked style="width: auto;">
+        <label for="chain-discard" style="display: inline; text-transform: none; letter-spacing: 0; margin: 0;">discard raw_bars per segment</label>
+      </span>
+    </div>
+    <div class="row" style="gap: 8px; margin-top: 10px;">
+      <button id="run-chained-backfill">▶ run chained backfill</button>
+    </div>
+  </details>
+  <div class="output" id="pipeline-out"></div>
+</section>
+
+<section>
+  <h2>jobs</h2>
+  <p class="section-hint">auto-refreshes every 3s. persisted to SQLite — survives service restarts. orphaned 'running' rows are auto-failed on startup.</p>
+  <div id="jobs-list">
+    <p class="empty-state">no jobs yet.</p>
+  </div>
+</section>
+
+<section>
+  <h2>rule tester</h2>
+  <p class="section-hint">evaluate candidate pattern rules against stored scan rows. each test run is persisted; re-running after new data lands tracks rule decay over time.</p>
+
+  <div style="margin-bottom: 18px;">
+    <label>rule bundle (json)</label>
+    <div class="row" style="align-items: stretch; gap: 10px;">
+      <div style="flex: 2;">
+        <input type="file" id="rules-file" accept=".json">
+      </div>
+      <div style="flex: 1; display: flex; align-items: center;">
+        <button id="rules-paste-toggle" class="small">paste json instead →</button>
+      </div>
+    </div>
+    <textarea id="rules-paste-area" style="
+      display: none; width: 100%; min-height: 200px; margin-top: 10px;
+      background: var(--bg); color: var(--text); border: 1px solid var(--border-strong);
+      padding: 8px 10px; font-family: var(--mono); font-size: 12px;
+      resize: vertical;"
+      placeholder='{"rules":[...], "n_folds":5, "track":true, "save_csv":true}'></textarea>
+  </div>
+
+  <div class="row" style="gap: 12px;">
+    <div style="flex: 1;">
+      <label>n folds</label>
+      <input type="number" id="rules-folds" value="5" min="0" max="20">
+    </div>
+    <div style="flex: 1;">
+      <label>fold mode</label>
+      <select id="rules-fold-mode" style="
+        width: 100%; padding: 7px 10px; background: var(--bg); color: var(--text);
+        border: 1px solid var(--border-strong); font-family: var(--mono);
+        font-size: 12px;">
+        <option value="expanding_window" selected>expanding window (n folds)</option>
+        <option value="year_based">year-based (one per calendar year)</option>
+      </select>
+    </div>
+    <div style="flex: 1;">
+      <label title="Lift threshold for the regime_consistent flag. Default 1.3 — a rule beating base rate by 30% in ≥80% of folds.">regime min lift</label>
+      <input type="number" id="rules-min-lift" value="1.3" min="1.0" max="5.0" step="0.05">
+    </div>
+    <div style="flex: 2; display: flex; align-items: center; gap: 18px; padding-bottom: 8px;">
+      <span style="display: flex; align-items: center; gap: 6px;">
+        <input type="checkbox" id="rules-track" checked style="width: auto;">
+        <label for="rules-track" style="display: inline; text-transform: none; letter-spacing: 0; margin: 0;">track (persist results)</label>
+      </span>
+      <span style="display: flex; align-items: center; gap: 6px;">
+        <input type="checkbox" id="rules-apply-filters" checked style="width: auto;">
+        <label for="rules-apply-filters" style="display: inline; text-transform: none; letter-spacing: 0; margin: 0;">apply standard filters</label>
+      </span>
+    </div>
+  </div>
+  <div class="row" style="gap: 12px; margin-top: 6px;">
+    <div style="flex: 1;">
+      <label>start date (optional)</label>
+      <input type="date" id="rules-start">
+    </div>
+    <div style="flex: 1;">
+      <label>end date (optional)</label>
+      <input type="date" id="rules-end">
+    </div>
+    <div style="flex: 2; display: flex; align-items: center; padding-bottom: 8px;">
+      <span style="color: var(--text-faint); font-size: 11px; font-style: italic;">
+        leave blank to test against all available scan rows in the rule's sector
+      </span>
+    </div>
+  </div>
+  <div class="row" style="gap: 8px; margin-top: 8px;">
+    <button id="rules-run" class="primary" style="font-weight: 600;">▶ test rules</button>
+  </div>
+  <div class="output" id="rules-out"></div>
+
+  <h3 style="
+    font-family: var(--serif); font-style: italic; font-weight: 400; font-size: 13px;
+    color: var(--accent); margin-top: 24px; margin-bottom: 10px;
+    padding-bottom: 6px; border-bottom: 1px dashed var(--border-strong);
+    letter-spacing: 0.3px;">tracked rules</h3>
+  <div id="tracked-list">
+    <p class="empty-state">no tracked rules yet. run the tester with track=on to persist results.</p>
+  </div>
+  <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center;">
+    <button id="refresh-tracked" class="small">refresh →</button>
+    <span style="display: flex; align-items: center; gap: 6px; margin-left: 8px;">
+      <input type="checkbox" id="show-retired" style="width: auto;">
+      <label for="show-retired" style="display: inline; text-transform: none; letter-spacing: 0; margin: 0; color: var(--text-dim); font-size: 11px;">include retired</label>
+    </span>
+  </div>
+
+  <div id="rule-history-panel" style="
+    display: none; margin-top: 18px; padding: 14px 16px;
+    border: 1px solid var(--border-strong); background: var(--bg);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <span style="color: var(--accent); font-family: var(--serif); font-style: italic; font-size: 13px;" id="history-rule-title">rule history</span>
+      <button class="small" id="history-close">close ×</button>
+    </div>
+    <div id="history-body"></div>
+  </div>
+</section>
+
+<section>
+  <h2>backtest</h2>
+  <p style="color: var(--text-dim); font-style: italic; margin-bottom: 14px;">
+    path-dependent trade simulation. takes a rule + tp/sl/timestop + slippage,
+    walks minute bars forward from each signal, reports realized p&amp;l.
+    unlike the rule tester (precision = target touched), this answers "would
+    the trade have made money."
+  </p>
+
+  <div class="row">
+    <label>rule bundle (json, single rule)</label>
+    <input type="file" id="bt-file" accept=".json">
+    <button class="small" id="bt-paste-toggle" style="margin-left: auto;">paste json instead →</button>
+  </div>
+  <textarea id="bt-paste-area" style="display: none; width: 100%; min-height: 120px; font-family: var(--mono); font-size: 11px; padding: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border-strong);"
+    placeholder='{"rules":[{"id":"...","sector":"...","target":"...","predicates":[...]}]}'></textarea>
+
+  <div class="row" style="gap: 12px; margin-top: 10px;">
+    <div style="flex: 1;">
+      <label title="Take-profit in bps. 50 = 0.5% target above entry.">tp (bps)</label>
+      <input type="number" id="bt-tp" value="50" min="1" max="500" step="1">
+    </div>
+    <div style="flex: 1;">
+      <label title="Stop-loss in bps. 100 = -1% stop. Wide stops (100-300) are defensible given the drawdown analysis.">sl (bps)</label>
+      <input type="number" id="bt-sl" value="100" min="1" max="1000" step="5">
+    </div>
+    <div style="flex: 1;">
+      <label title="ET time at/after which the trade is flattened unconditionally. Leave EMPTY to disable — trades exit only on TP or SL.">timestop (ET)</label>
+      <input type="text" id="bt-timestop" value="15:50" placeholder="15:50 or empty">
+    </div>
+    <div style="flex: 1;">
+      <label title="Round-trip slippage in bps. Applied half at entry, half at exit.">slippage (bps)</label>
+      <input type="number" id="bt-slippage" value="10" min="0" max="100" step="1">
+    </div>
+  </div>
+  <div class="row" style="gap: 12px; margin-top: 6px;">
+    <div style="flex: 1;">
+      <label title="Skip signals when SPY's return from open to scan time is below this (decimal, e.g. -0.002 for -0.2%). Leave blank to disable.">spy regime filter</label>
+      <input type="number" id="bt-regime" placeholder="-0.002 (optional)" step="0.0005">
+    </div>
+    <div style="flex: 2;">
+      <label title="Comma-separated symbols to exclude, e.g. SMCI,LITE,COHR">symbol exclude</label>
+      <input type="text" id="bt-exclude" placeholder="SMCI,LITE (optional)">
+    </div>
+    <div style="flex: 1; display: flex; align-items: center; padding-bottom: 8px;">
+      <span style="display: flex; align-items: center; gap: 6px;">
+        <input type="checkbox" id="bt-jit" checked style="width: auto;">
+        <label for="bt-jit" style="display: inline; text-transform: none; letter-spacing: 0; margin: 0;" title="Pull raw bars from Alpaca if missing for (symbol,date) pairs">jit backfill</label>
+      </span>
+    </div>
+  </div>
+  <div class="row" style="gap: 12px; margin-top: 6px;">
+    <div style="flex: 1;">
+      <label>start date (optional)</label>
+      <input type="date" id="bt-start">
+    </div>
+    <div style="flex: 1;">
+      <label>end date (optional)</label>
+      <input type="date" id="bt-end">
+    </div>
+    <div style="flex: 2; display: flex; align-items: center; padding-bottom: 8px;">
+      <span style="color: var(--text-faint); font-size: 11px; font-style: italic;">
+        blank = use all research_rows available for the rule's sector
+      </span>
+    </div>
+  </div>
+
+  <div style="margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--border-strong); background: var(--bg);">
+    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+      <input type="checkbox" id="bt-cond-enable" style="width: auto;">
+      <label for="bt-cond-enable" style="display: inline; text-transform: none; letter-spacing: 0; margin: 0; color: var(--accent); font-weight: 500;">use conditional exits (option C)</label>
+    </div>
+    <div id="bt-cond-panel" style="display: none;">
+      <p style="color: var(--text-faint); font-size: 11px; font-style: italic; margin: 4px 0 10px;">
+        first match wins. unmatched signals use top-level tp/sl at full size.
+      </p>
+      <!-- Branch 1 -->
+      <div style="display: flex; gap: 8px; align-items: end; margin-bottom: 6px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 100px;">
+          <label style="font-size: 10px;">feature</label>
+          <input type="text" id="bt-cond-feature-1" placeholder="gap_filled" value="gap_filled">
+        </div>
+        <div style="width: 60px;">
+          <label style="font-size: 10px;">op</label>
+          <select id="bt-cond-op-1">
+            <option value="==">==</option>
+            <option value="!=">!=</option>
+            <option value="<">&lt;</option>
+            <option value="<=">&lt;=</option>
+            <option value=">">&gt;</option>
+            <option value=">=">&gt;=</option>
+          </select>
+        </div>
+        <div style="width: 80px;">
+          <label style="font-size: 10px;">value</label>
+          <input type="number" id="bt-cond-value-1" placeholder="0" value="0" step="any">
+        </div>
+        <div style="width: 70px;">
+          <label style="font-size: 10px;">tp bps</label>
+          <input type="number" id="bt-cond-tp-1" value="75" min="1" max="500">
+        </div>
+        <div style="width: 70px;">
+          <label style="font-size: 10px;">sl bps</label>
+          <input type="number" id="bt-cond-sl-1" value="100" min="1" max="1000">
+        </div>
+        <div style="width: 70px;">
+          <label style="font-size: 10px;">size</label>
+          <input type="number" id="bt-cond-size-1" value="1.0" min="0" max="5" step="0.1">
+        </div>
+        <div style="flex: 1; min-width: 100px;">
+          <label style="font-size: 10px;">label</label>
+          <input type="text" id="bt-cond-label-1" placeholder="gap_open" value="gap_open">
+        </div>
+      </div>
+      <!-- Branch 2 -->
+      <div style="display: flex; gap: 8px; align-items: end; margin-bottom: 6px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 100px;">
+          <label style="font-size: 10px;">feature</label>
+          <input type="text" id="bt-cond-feature-2" placeholder="(empty = skip)">
+        </div>
+        <div style="width: 60px;">
+          <label style="font-size: 10px;">op</label>
+          <select id="bt-cond-op-2">
+            <option value="==">==</option>
+            <option value="!=">!=</option>
+            <option value="<">&lt;</option>
+            <option value="<=">&lt;=</option>
+            <option value=">">&gt;</option>
+            <option value=">=">&gt;=</option>
+          </select>
+        </div>
+        <div style="width: 80px;">
+          <label style="font-size: 10px;">value</label>
+          <input type="number" id="bt-cond-value-2" step="any">
+        </div>
+        <div style="width: 70px;">
+          <label style="font-size: 10px;">tp bps</label>
+          <input type="number" id="bt-cond-tp-2" value="50" min="1" max="500">
+        </div>
+        <div style="width: 70px;">
+          <label style="font-size: 10px;">sl bps</label>
+          <input type="number" id="bt-cond-sl-2" value="150" min="1" max="1000">
+        </div>
+        <div style="width: 70px;">
+          <label style="font-size: 10px;">size</label>
+          <input type="number" id="bt-cond-size-2" value="0.5" min="0" max="5" step="0.1">
+        </div>
+        <div style="flex: 1; min-width: 100px;">
+          <label style="font-size: 10px;">label</label>
+          <input type="text" id="bt-cond-label-2" placeholder="gap_filled">
+        </div>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 4px;">
+        <button class="small" id="bt-cond-preset-C-simple" type="button">preset: option C-simple</button>
+        <button class="small" id="bt-cond-preset-C-scaled" type="button">preset: option C-scaled</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="row" style="gap: 8px; margin-top: 8px;">
+    <button id="bt-run" class="primary" style="font-weight: 600;">▶ run backtest</button>
+    <span style="color: var(--text-faint); font-size: 11px; margin-left: 10px;">
+      may take minutes with jit backfill on
+    </span>
+  </div>
+  <div class="output" id="bt-out"></div>
+</section>
+
+<section>
+  <h2 style="font-size: 15px;">recent backtest runs</h2>
+  <div id="bt-runs-list">
+    <p class="empty-state">no backtest runs yet.</p>
+  </div>
+  <div style="margin-top: 10px;">
+    <button id="bt-runs-refresh" class="small">refresh →</button>
+  </div>
+
+  <div id="bt-diagnose-panel" style="
+    display: none; margin-top: 18px; padding: 14px 16px;
+    border: 1px solid var(--border-strong); background: var(--bg);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <span id="bt-diagnose-title" style="color: var(--accent); font-family: var(--serif); font-style: italic; font-size: 13px;">diagnose</span>
+      <button class="small" id="bt-diagnose-close">close ×</button>
+    </div>
+    <pre id="bt-diagnose-body" style="margin: 0; white-space: pre-wrap; font-family: var(--mono); font-size: 11px; color: var(--text);"></pre>
+  </div>
+</section>
+
+<section>
+  <h2>evidence packs</h2>
+  <p class="section-hint">generated zip bundles available for download.</p>
+  <div id="packs-list">
+    <p class="empty-state">no packs yet. run the pipeline then click "pack".</p>
+  </div>
+  <div style="margin-top: 12px;">
+    <button id="refresh-packs" class="small">refresh packs →</button>
+  </div>
+</section>
+
+<div id="toast"></div>
+
+<script>
+const KEY_STORAGE = "tech_collector_api_key";
+const SECTOR_STORAGE = "tech_collector_sector";
+let apiKey = "";
+let pollTimer = null;
+
+async function boot() {
+  apiKey = localStorage.getItem(KEY_STORAGE) || "";
+  if (apiKey) {
+    document.getElementById("api-key").value = apiKey;
+    await verifyAuth();
+  } else {
+    setAuthed(false);
+  }
+  try {
+    const r = await fetch("/info");
+    if (r.ok) {
+      const j = await r.json();
+      document.getElementById("version-tag").textContent = "v" + j.version;
+    }
+  } catch (e) {}
+  await loadSectors();
+  startPolling();
+  // v0.6.0: populate backtest runs list if authed
+  if (apiKey) {
+    try { refreshBacktestRuns(); } catch (e) {}
+  }
+}
+
+async function loadSectors() {
+  const sel = document.getElementById("sector-select");
+  try {
+    // Fetch both in parallel: /sectors (universe sizes) and /sector-status
+    // (per-sector data coverage). Merge on sector name to produce labels
+    // like "Information Technology (72) · 2024-04-19 → 2026-04-17".
+    const [rSectors, rStatus] = await Promise.all([
+      fetch("/sectors"),
+      fetch("/sector-status"),
+    ]);
+    if (!rSectors.ok) throw new Error("HTTP " + rSectors.status + " on /sectors");
+    const jSectors = await rSectors.json();
+    let statusByName = {};
+    if (rStatus.ok) {
+      const jStatus = await rStatus.json();
+      for (const s of (jStatus.sectors || [])) statusByName[s.sector] = s;
+    }
+    const saved = localStorage.getItem(SECTOR_STORAGE);
+    const chosen = saved || jSectors.default_sector;
+    sel.innerHTML = jSectors.sectors.map(s => {
+      const st = statusByName[s.name] || {};
+      let suffix = "";
+      if (st.has_data && st.earliest_date && st.latest_date) {
+        suffix = " · " + st.earliest_date + " → " + st.latest_date;
+      } else {
+        suffix = " · no data";
+      }
+      const selected = s.name === chosen ? " selected" : "";
+      return `<option value="${s.name}"${selected}>${s.name} (${s.symbol_count})${suffix}</option>`;
+    }).join("");
+  } catch (e) {
+    sel.innerHTML = '<option value="">error loading sectors</option>';
+    toast("Could not load /sectors: " + e.message, "err");
+  }
+}
+
+document.getElementById("sector-select").addEventListener("change", (ev) => {
+  const v = ev.target.value;
+  if (v) {
+    localStorage.setItem(SECTOR_STORAGE, v);
+    toast("Sector set to " + v, "ok");
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Date presets — one click populates both date inputs.
+// "full range" start = Alpaca SIP availability on the user's subscription;
+// end = yesterday (avoids incomplete current-session data).
+// ---------------------------------------------------------------------------
+const SIP_START = "2024-04-19";
+function _yesterdayISO() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+function _daysAgoISO(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+document.querySelectorAll(".preset-btn").forEach(btn => {
+  btn.onclick = () => {
+    const p = btn.dataset.preset;
+    const end = _yesterdayISO();
+    let start;
+    if (p === "full") start = SIP_START;
+    else if (p === "6m") start = _daysAgoISO(183);
+    else if (p === "1m") start = _daysAgoISO(30);
+    else if (p === "1w") start = _daysAgoISO(7);
+    document.getElementById("start-date").value = start;
+    document.getElementById("end-date").value = end;
+    toast("Range set: " + start + " → " + end, "ok");
+  };
+});
+
+// ---------------------------------------------------------------------------
+// Auto-download: when a generate-research-pack job transitions to
+// succeeded, pull the parquet file down automatically. We track seen
+// job IDs so reopening the tab later doesn't re-trigger downloads for
+// jobs that were already processed.
+// ---------------------------------------------------------------------------
+const AUTO_DOWNLOADED_KEY = "tech_collector_autodl_jobs";
+function _autoDownloadedSet() {
+  try {
+    const raw = localStorage.getItem(AUTO_DOWNLOADED_KEY);
+    return new Set(raw ? JSON.parse(raw) : []);
+  } catch { return new Set(); }
+}
+function _markAutoDownloaded(jobId) {
+  const s = _autoDownloadedSet();
+  s.add(jobId);
+  // Keep only the last 200 so this doesn't grow forever
+  const arr = Array.from(s).slice(-200);
+  localStorage.setItem(AUTO_DOWNLOADED_KEY, JSON.stringify(arr));
+}
+async function _triggerDownload(filename) {
+  try {
+    const r = await api("/packs/" + encodeURIComponent(filename));
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast("Downloaded " + filename, "ok");
+  } catch (e) {
+    toast("Auto-download failed: " + e.message, "err");
+  }
+}
+function _maybeAutoDownload(jobs) {
+  const seen = _autoDownloadedSet();
+  for (const j of jobs) {
+    if (j.status !== "succeeded") continue;
+    // Only auto-download for single-sector generate jobs; all-sectors
+    // produces 11 files and we don't want to spam the browser with them.
+    if (j.kind !== "generate-research-pack") continue;
+    if (seen.has(j.job_id)) continue;
+    const fn = j.result && j.result.pack_filename;
+    if (!fn) continue;
+    _markAutoDownloaded(j.job_id);
+    _triggerDownload(fn);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Generate research pack — the primary one-click button.
+// ---------------------------------------------------------------------------
+document.getElementById("run-generate").onclick = async () => {
+  const out = document.getElementById("pipeline-out");
+  const range = currentRange();
+  const all = document.getElementById("run-all-sectors").checked;
+  if (!range.start || !range.end) { toast("Set both dates", "err"); return; }
+  const body = {
+    start: range.start, end: range.end,
+    sector: range.sector,
+    run_all_sectors: all,
+  };
+  out.textContent = all
+    ? "Starting all-sectors pipeline for " + range.start + " → " + range.end
+      + " ... this runs for hours. You can close this tab; jobs keep running."
+    : "Starting pipeline (" + (range.sector || "default") + ") for "
+      + range.start + " → " + range.end
+      + " ...\nBackfill + compute are skipped when already complete for this range.";
+  out.className = "output show";
+  try {
+    const r = await postJSON("/generate-research-pack", body);
+    const j = await r.json();
+    if (r.ok) {
+      out.className = "output show ok";
+      out.textContent = JSON.stringify(j, null, 2)
+        + (all ? "" :
+           "\n\nWatch the jobs list below. When it succeeds, the parquet file will auto-download.");
+      toast(all ? "All-sectors run started" : "Research pack job started", "ok");
+      refreshJobs();
+    } else {
+      out.className = "output show err";
+      out.textContent = JSON.stringify(j, null, 2);
+      toast("Generate failed", "err");
+    }
+  } catch (e) {
+    out.className = "output show err";
+    out.textContent = e.message;
+    toast(e.message, "err");
+  }
+};
+
+// Parquet export (manual, single-step — bypass backfill/compute orchestration)
+document.getElementById("run-export-rows-parquet").onclick = async () => {
+  const out = document.getElementById("pipeline-out");
+  const range = currentRange();
+  if (!range.start || !range.end) { toast("Set both dates", "err"); return; }
+  out.textContent = "Exporting scan rows (parquet) for " + range.start
+    + " → " + range.end + " ...";
+  out.className = "output show";
+  try {
+    const r = await postJSON("/export-scan-rows-parquet", range);
+    const j = await r.json();
+    if (r.ok) {
+      out.className = "output show ok";
+      out.textContent = JSON.stringify(j, null, 2);
+      toast("Parquet export ready: " + j.size_mb + " MB", "ok");
+      refreshPacks();
+      // Trigger the download immediately for manual exports too
+      if (j.pack_filename) _triggerDownload(j.pack_filename);
+    } else {
+      out.className = "output show err";
+      out.textContent = JSON.stringify(j, null, 2);
+      toast("Parquet export failed", "err");
+    }
+  } catch (e) {
+    out.className = "output show err";
+    out.textContent = e.message;
+    toast(e.message, "err");
+  }
+};
+
+async function verifyAuth() {
+  const key = document.getElementById("api-key").value.trim();
+  if (!key) { setAuthed(false); return false; }
+  try {
+    const r = await fetch("/jobs", { headers: { "X-API-Key": key } });
+    if (r.ok) {
+      apiKey = key;
+      localStorage.setItem(KEY_STORAGE, key);
+      setAuthed(true);
+      toast("API key verified", "ok");
+      refreshPacks();
+      refreshJobs();
+      refreshTracked();
+      return true;
+    } else if (r.status === 401) {
+      setAuthed(false);
+      toast("Invalid API key", "err");
+    } else {
+      setAuthed(false);
+      toast("Unexpected: HTTP " + r.status, "err");
+    }
+  } catch (e) {
+    setAuthed(false);
+    toast("Network error: " + e.message, "err");
+  }
+  return false;
+}
+
+function setAuthed(ok) {
+  const row = document.getElementById("auth-row");
+  row.classList.toggle("authed", ok);
+  const buttons = [
+    "upload-ref","run-backfill","run-compute","run-validate","run-pack",
+    "run-pack-monthly","run-export-rows","run-export-rows-parquet",
+    "run-generate","refresh-packs",
+    // v0.4.0 rule tester
+    "rules-run","rules-paste-toggle","refresh-tracked",
+    // v0.5.0 chained backfill
+    "run-chained-backfill",
+  ];
+  buttons.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = !ok;
+  });
+}
+
+document.getElementById("save-key").onclick = () => verifyAuth();
+document.getElementById("clear-key").onclick = () => {
+  localStorage.removeItem(KEY_STORAGE);
+  apiKey = "";
+  document.getElementById("api-key").value = "";
+  setAuthed(false);
+  toast("Cleared", "ok");
+};
+
+async function api(path, opts = {}) {
+  opts.headers = opts.headers || {};
+  opts.headers["X-API-Key"] = apiKey;
+  const r = await fetch(path, opts);
+  if (r.status === 401) {
+    setAuthed(false);
+    throw new Error("Auth expired — re-enter API key");
+  }
+  return r;
+}
+
+document.getElementById("upload-ref").onclick = async () => {
+  const file = document.getElementById("csv-file").files[0];
+  if (!file) { toast("Pick a CSV file first", "err"); return; }
+  const out = document.getElementById("upload-out");
+  out.textContent = "Uploading " + (file.size/1e6).toFixed(1) + " MB ...";
+  out.className = "output show";
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const r = await api("/upload-reference", { method: "POST", body: fd });
+    const j = await r.json();
+    if (r.ok) {
+      out.className = "output show ok";
+      out.textContent = JSON.stringify(j, null, 2);
+      toast("Reference CSV uploaded", "ok");
+    } else {
+      out.className = "output show err";
+      out.textContent = JSON.stringify(j, null, 2);
+      toast("Upload failed", "err");
+    }
+  } catch (e) {
+    out.className = "output show err";
+    out.textContent = e.message;
+    toast(e.message, "err");
+  }
+};
+
+function currentRange() {
+  // Returns the shared request body used by /backfill, /compute, /pack,
+  // /pack-monthly, /export-scan-rows. Sector is read fresh from the
+  // dropdown on every call so changing it mid-session takes effect
+  // immediately on the next action.
+  return {
+    start: document.getElementById("start-date").value,
+    end: document.getElementById("end-date").value,
+    sector: document.getElementById("sector-select").value || null,
+  };
+}
+
+async function postJSON(path, body) {
+  return api(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+async function runAsync(kind) {
+  const out = document.getElementById("pipeline-out");
+  const range = currentRange();
+  if (!range.start || !range.end) { toast("Set both dates", "err"); return; }
+  out.textContent = "Starting " + kind + " for " + range.start + " → " + range.end + " ...";
+  out.className = "output show";
+  try {
+    const r = await postJSON("/" + kind, range);
+    const j = await r.json();
+    if (r.ok) {
+      out.className = "output show ok";
+      out.textContent = "Job started: " + j.job_id + "\nPoll: " + j.poll;
+      toast(kind + " started", "ok");
+      refreshJobs();
+    } else {
+      out.className = "output show err";
+      out.textContent = JSON.stringify(j, null, 2);
+      toast(kind + " failed", "err");
+    }
+  } catch (e) {
+    out.className = "output show err";
+    out.textContent = e.message;
+    toast(e.message, "err");
+  }
+}
+
+document.getElementById("run-backfill").onclick = () => runAsync("backfill");
+document.getElementById("run-compute").onclick = () => runAsync("compute");
+
+document.getElementById("run-chained-backfill").onclick = async () => {
+  const out = document.getElementById("pipeline-out");
+  const start = document.getElementById("chain-start").value;
+  const end = document.getElementById("chain-end").value;
+  const width = parseInt(document.getElementById("chain-segment-width").value) || 6;
+  const discard = document.getElementById("chain-discard").checked;
+  const sector = document.getElementById("sector-select").value;
+  if (!start || !end) { toast("Set both chain dates", "err"); return; }
+  if (!sector) { toast("Select a sector", "err"); return; }
+  // Quick date-span sanity check before firing a multi-hour job
+  const days = Math.ceil((new Date(end) - new Date(start)) / (1000 * 60 * 60 * 24));
+  if (days < 0) { toast("Chain end must be after start", "err"); return; }
+  if (days > 400) {
+    if (!confirm(
+      "Chained backfill over " + days + " days (~" + Math.ceil(days / 180) + " segments).\n\n" +
+      "Estimated wall time: ~" + (Math.ceil(days / 180) * 30) + " minutes.\n" +
+      (discard ? "raw_bars will be discarded per segment." : "raw_bars will be RETAINED (DB will grow).") + "\n\n" +
+      "Continue?"
+    )) return;
+  }
+  out.className = "output show";
+  out.textContent = "Starting chained backfill " + start + " → " + end + " · " + sector + " ...";
+  try {
+    const r = await postJSON("/backfill-chained", {
+      start, end, sector,
+      months_per_segment: width,
+      discard_raw_bars: discard,
+    });
+    const j = await r.json();
+    if (r.ok) {
+      out.className = "output show ok";
+      out.textContent =
+        "Chained backfill started: " + j.job_id + "\n" +
+        "Segments: " + j.n_segments + " (6-month each)\n" +
+        "First: " + (j.first_segment || []).join(" → ") + "\n" +
+        "Last:  " + (j.last_segment || []).join(" → ") + "\n" +
+        "Estimated wall minutes: " + j.estimated_wall_minutes + "\n" +
+        "Poll: " + j.poll;
+      toast("Chained backfill started (" + j.n_segments + " segments)", "ok");
+      refreshJobs();
+    } else {
+      out.className = "output show err";
+      out.textContent = JSON.stringify(j, null, 2);
+      toast("Chain start failed", "err");
+    }
+  } catch (e) {
+    out.className = "output show err";
+    out.textContent = e.message;
+    toast(e.message, "err");
+  }
+};
+
+document.getElementById("run-validate").onclick = async () => {
+  const out = document.getElementById("pipeline-out");
+  out.textContent = "Running validation ...";
+  out.className = "output show";
+  try {
+    const r = await postJSON("/validate", {
+      research_csv_path: "/var/data/tech_research_dataset.csv",
+      sample: 500,
+      sector: document.getElementById("sector-select").value || null,
+    });
+    const j = await r.json();
+    out.className = "output show " + (j.passed ? "ok" : "err");
+    out.textContent = JSON.stringify(j, null, 2);
+    toast(j.passed ? "Validation passed" : "Validation failed — see output", j.passed ? "ok" : "err");
+  } catch (e) {
+    out.className = "output show err";
+    out.textContent = e.message;
+    toast(e.message, "err");
+  }
+};
+
+document.getElementById("run-pack").onclick = async () => {
+  const out = document.getElementById("pipeline-out");
+  const range = currentRange();
+  out.textContent = "Building pack ...";
+  out.className = "output show";
+  try {
+    const r = await postJSON("/pack", range);
+    const j = await r.json();
+    if (r.ok) {
+      out.className = "output show ok";
+      out.textContent = JSON.stringify(j, null, 2);
+      toast("Pack ready — see Evidence Packs", "ok");
+      refreshPacks();
+    } else {
+      out.className = "output show err";
+      out.textContent = JSON.stringify(j, null, 2);
+      toast("Pack failed", "err");
+    }
+  } catch (e) {
+    out.className = "output show err";
+    out.textContent = e.message;
+    toast(e.message, "err");
+  }
+};
+
+document.getElementById("run-pack-monthly").onclick = async () => {
+  const out = document.getElementById("pipeline-out");
+  const range = currentRange();
+  if (!range.start || !range.end) { toast("Set both dates", "err"); return; }
+  out.textContent = "Building monthly packs for " + range.start + " \u2192 " + range.end +
+                    " ... may take a few minutes.";
+  out.className = "output show";
+  try {
+    const r = await postJSON("/pack-monthly", range);
+    const j = await r.json();
+    if (r.ok) {
+      out.className = "output show ok";
+      out.textContent = JSON.stringify(j, null, 2);
+      toast("Built " + j.total_packs + " monthly packs (" + j.total_size_mb + " MB total)", "ok");
+      refreshPacks();
+    } else {
+      out.className = "output show err";
+      out.textContent = JSON.stringify(j, null, 2);
+      toast("Monthly pack build failed", "err");
+    }
+  } catch (e) {
+    out.className = "output show err";
+    out.textContent = e.message;
+    toast(e.message, "err");
+  }
+};
+
+document.getElementById("run-export-rows").onclick = async () => {
+  const out = document.getElementById("pipeline-out");
+  const range = currentRange();
+  if (!range.start || !range.end) { toast("Set both dates", "err"); return; }
+  out.textContent = "Exporting scan rows for " + range.start + " \u2192 " + range.end + " ...";
+  out.className = "output show";
+  try {
+    const r = await postJSON("/export-scan-rows", range);
+    const j = await r.json();
+    if (r.ok) {
+      out.className = "output show ok";
+      out.textContent = JSON.stringify(j, null, 2);
+      toast("Scan-rows export ready: " + j.size_mb + " MB", "ok");
+      refreshPacks();
+    } else {
+      out.className = "output show err";
+      out.textContent = JSON.stringify(j, null, 2);
+      toast("Scan-rows export failed", "err");
+    }
+  } catch (e) {
+    out.className = "output show err";
+    out.textContent = e.message;
+    toast(e.message, "err");
+  }
+};
+
+async function refreshJobs() {
+  if (!apiKey) return;
+  try {
+    const r = await api("/jobs");
+    if (!r.ok) return;
+    const jobs = await r.json();
+    renderJobs(jobs);
+    // After rendering, check whether any succeeded generate-research-pack
+    // jobs need the parquet auto-downloaded, and if so, also refresh the
+    // sector-status labels in the dropdown (coverage has changed).
+    const preSeen = _autoDownloadedSet();
+    _maybeAutoDownload(jobs);
+    const postSeen = _autoDownloadedSet();
+    if (postSeen.size !== preSeen.size) {
+      loadSectors();    // refresh dropdown labels with new coverage
+      refreshPacks();   // and the packs list
+    }
+  } catch (e) {}
+}
+
+function renderJobs(jobs) {
+  const list = document.getElementById("jobs-list");
+  if (!jobs || jobs.length === 0) {
+    list.innerHTML = '<p class="empty-state">no jobs yet.</p>';
+    return;
+  }
+  jobs.sort((a, b) => (b.started_at_utc || "").localeCompare(a.started_at_utc || ""));
+  list.innerHTML = jobs.map(j => {
+    const startedAt = j.started_at_utc ? new Date(j.started_at_utc).toLocaleTimeString() : "—";
+    let detail = "";
+    if (j.params) detail = (j.params.start || "") + " → " + (j.params.end || "");
+    if (j.status === "succeeded" && j.result) {
+      const parts = [];
+      if (j.result.rows !== undefined) parts.push(j.result.rows + " rows");
+      if (j.result.rows_written !== undefined) parts.push(j.result.rows_written + " written");
+      if (j.result.errors !== undefined && j.result.errors > 0) parts.push(j.result.errors + " errors");
+      // Research-pack jobs: show which steps were skipped + final size
+      if (Array.isArray(j.result.steps_skipped) && j.result.steps_skipped.length) {
+        parts.push("skipped: " + j.result.steps_skipped.join("+"));
+      }
+      if (j.result.size_mb !== undefined) parts.push(j.result.size_mb + " MB");
+      if (j.result.total_packs !== undefined) parts.push(j.result.total_packs + " packs");
+      if (parts.length) detail += " · " + parts.join(", ");
+    }
+    if (j.status === "failed" && j.error) {
+      detail = j.error.split("\n")[0].slice(0, 80);
+    }
+    const running = j.status === "running" ? '<span class="spinner"></span>' : "";
+    const kind = (j.kind || "").replace(/</g, "&lt;");
+    const status = (j.status || "").replace(/</g, "&lt;");
+    const detailSafe = detail.replace(/</g, "&lt;");
+    return `<div class="job-item ${status}">
+      <span class="job-kind">${kind}</span>
+      <span class="job-status ${status}">${running}${status}</span>
+      <span class="job-detail">${detailSafe}</span>
+      <span class="job-time">${startedAt}</span>
+    </div>`;
+  }).join("");
+}
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(() => {
+    if (apiKey) refreshJobs();
+  }, 3000);
+}
+
+async function refreshPacks() {
+  if (!apiKey) return;
+  try {
+    const r = await api("/packs");
+    if (!r.ok) return;
+    const j = await r.json();
+    renderPacks(j.packs || []);
+  } catch (e) {}
+}
+
+function renderPacks(packs) {
+  const list = document.getElementById("packs-list");
+  if (!packs || packs.length === 0) {
+    list.innerHTML = '<p class="empty-state">no packs yet. run the pipeline then click "pack".</p>';
+    return;
+  }
+  packs.sort((a, b) => (b.modified_at_utc || "").localeCompare(a.modified_at_utc || ""));
+  list.innerHTML = packs.map(p => {
+    const sizeMb = (p.size_bytes / 1e6).toFixed(2);
+    const when = new Date(p.modified_at_utc).toLocaleString();
+    const name = p.filename.replace(/"/g, "&quot;");
+    return `<div class="pack-item">
+      <span class="pack-name">${name}</span>
+      <span class="pack-meta">${sizeMb} MB · ${when}</span>
+      <button class="small" data-filename="${name}" onclick="downloadPack(this)">download →</button>
+    </div>`;
+  }).join("");
+}
+
+window.downloadPack = async function(btn) {
+  const filename = btn.dataset.filename;
+  btn.disabled = true;
+  btn.textContent = "downloading...";
+  try {
+    const r = await api("/packs/" + encodeURIComponent(filename));
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast("Downloaded " + filename, "ok");
+  } catch (e) {
+    toast("Download failed: " + e.message, "err");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "download →";
+  }
+};
+
+document.getElementById("refresh-packs").onclick = refreshPacks;
+
+// ---------------------------------------------------------------------------
+// Rule tester UI (v0.4.0)
+// ---------------------------------------------------------------------------
+
+// Toggle: file input vs paste area
+document.getElementById("rules-paste-toggle").onclick = () => {
+  const ta = document.getElementById("rules-paste-area");
+  const btn = document.getElementById("rules-paste-toggle");
+  if (ta.style.display === "none") {
+    ta.style.display = "block";
+    btn.textContent = "use file upload instead →";
+  } else {
+    ta.style.display = "none";
+    btn.textContent = "paste json instead →";
+  }
+};
+
+async function _readBundleJSON() {
+  // Prefer file input if a file is selected; fall back to textarea.
+  const file = document.getElementById("rules-file").files[0];
+  const paste = document.getElementById("rules-paste-area").value.trim();
+  let text = "";
+  if (file) {
+    text = await file.text();
+  } else if (paste) {
+    text = paste;
+  } else {
+    throw new Error("Select a JSON file or paste bundle JSON");
+  }
+  let obj;
+  try {
+    obj = JSON.parse(text);
+  } catch (e) {
+    throw new Error("Invalid JSON: " + e.message);
+  }
+  // Allow either {rules:[...]} or a bare array of rules
+  if (Array.isArray(obj)) obj = { rules: obj };
+  if (!obj.rules || !Array.isArray(obj.rules) || obj.rules.length === 0) {
+    throw new Error("Bundle must contain a non-empty 'rules' array");
+  }
+  return obj;
+}
+
+document.getElementById("rules-run").onclick = async () => {
+  const out = document.getElementById("rules-out");
+  out.className = "output show";
+  out.textContent = "Reading rule bundle...";
+  let bundle;
+  try {
+    bundle = await _readBundleJSON();
+  } catch (e) {
+    out.className = "output show err";
+    out.textContent = e.message;
+    toast(e.message, "err");
+    return;
+  }
+
+  // Merge UI-controlled fields onto the bundle so the user's choices win.
+  // UI date inputs override bundle dates when set.
+  const uiStart = document.getElementById("rules-start").value || null;
+  const uiEnd = document.getElementById("rules-end").value || null;
+  const body = {
+    rules: bundle.rules,
+    start: uiStart || bundle.start || null,
+    end: uiEnd || bundle.end || null,
+    n_folds: parseInt(document.getElementById("rules-folds").value) || 0,
+    fold_mode: document.getElementById("rules-fold-mode").value,
+    regime_min_lift: parseFloat(document.getElementById("rules-min-lift").value) || 1.3,
+    apply_filters: document.getElementById("rules-apply-filters").checked,
+    track: document.getElementById("rules-track").checked,
+    save_csv: true,  // always on — the whole point is downloadable results
+  };
+
+  out.textContent = "Testing " + bundle.rules.length + " rules... (this can take a few seconds)";
+  try {
+    const r = await postJSON("/rules/test", body);
+    const j = await r.json();
+    if (!r.ok) {
+      out.className = "output show err";
+      out.textContent = JSON.stringify(j, null, 2);
+      toast("Test failed: " + (j.detail || "see output"), "err");
+      return;
+    }
+    // Render: warnings first (prominently), then summary line + per-rule rows
+    const lines = [];
+    const warnings = j.warnings || [];
+    if (warnings.length > 0) {
+      lines.push("⚠ WARNINGS — READ BEFORE INTERPRETING RESULTS:");
+      lines.push("");
+      for (const w of warnings) {
+        // wrap long warnings to ~100 chars for readability in the output panel
+        const wrapped = w.match(/.{1,100}(\s|$)/g) || [w];
+        for (const chunk of wrapped) lines.push("  " + chunk.trim());
+      }
+      lines.push("");
+      lines.push("─".repeat(60));
+      lines.push("");
+    }
+    lines.push("Tested " + (j.n_rules_tested || bundle.rules.length) + " rules against " + (j.n_rows_in_source || 0) + " rows");
+    if (j.csv_filename) lines.push("CSV:  " + j.csv_filename);
+    if (j.json_filename) lines.push("JSON: " + j.json_filename);
+    if (j.tracking_error) lines.push("⚠ tracking_error: " + j.tracking_error);
+    lines.push("");
+    lines.push("per-rule summary (overall / fold median):");
+    lines.push("");
+    for (const entry of (j.rules || [])) {
+      if (entry.error) {
+        lines.push("  " + entry.rule_id + ":  ERROR — " + entry.error);
+        continue;
+      }
+      const o = entry.overall || {};
+      const fs = entry.fold_summary || {};
+      const prec = o.precision !== null && o.precision !== undefined ? o.precision.toFixed(4) : "—";
+      const lift = o.lift !== null && o.lift !== undefined ? o.lift.toFixed(3) : "—";
+      const sup = o.support !== null && o.support !== undefined ? o.support : "—";
+      const fpMed = fs.oos_precision_median !== undefined ? fs.oos_precision_median.toFixed(4) : "—";
+      const flMed = fs.oos_lift_median !== undefined ? fs.oos_lift_median.toFixed(3) : "—";
+      const rc = fs.regime_consistent === true ? "✓" : fs.regime_consistent === false ? "✗" : "—";
+      lines.push(
+        "  " + entry.rule_id.padEnd(32) +
+        "  prec=" + prec + "  lift=" + lift + "  sup=" + sup +
+        "  [folds: p_med=" + fpMed + " l_med=" + flMed + " consistent=" + rc + "]"
+      );
+    }
+    out.className = warnings.length > 0 ? "output show err" : "output show ok";
+    out.textContent = lines.join("\n");
+
+    // Auto-download the CSV
+    if (j.csv_filename) {
+      _triggerDownload(j.csv_filename);
+      toast("Results ready: " + j.csv_filename, "ok");
+    } else {
+      toast("Tested " + (j.n_rules_tested || bundle.rules.length) + " rules", "ok");
+    }
+
+    // Refresh tracked list if we tracked
+    if (body.track) refreshTracked();
+    refreshPacks();
+  } catch (e) {
+    out.className = "output show err";
+    out.textContent = e.message;
+    toast(e.message, "err");
+  }
+};
+
+// -- Tracked rules list --
+
+async function refreshTracked() {
+  if (!apiKey) return;
+  const includeRetired = document.getElementById("show-retired").checked;
+  const qs = includeRetired ? "" : "?status=active";
+  try {
+    const r = await api("/rules/tracked" + qs);
+    if (!r.ok) return;
+    const j = await r.json();
+    renderTracked(j.rules || []);
+  } catch (e) { /* ignore */ }
+}
+
+function renderTracked(rules) {
+  const list = document.getElementById("tracked-list");
+  if (!rules || rules.length === 0) {
+    list.innerHTML = '<p class="empty-state">no tracked rules yet. run the tester with track=on to persist results.</p>';
+    return;
+  }
+  // Sort active first, then by rule id
+  rules.sort((a, b) => {
+    if (a.status !== b.status) return a.status === "active" ? -1 : 1;
+    return (a.rule_id || "").localeCompare(b.rule_id || "");
+  });
+  // Header + rows
+  const header = `<div class="tracked-row tracked-head" style="
+    display: grid; grid-template-columns: 2fr 1.4fr 1.2fr 0.8fr 1fr auto;
+    gap: 10px; padding: 6px 10px; color: var(--text-faint);
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+    border-bottom: 1px dashed var(--border-strong);">
+    <span>rule id</span><span>sector</span><span>target</span>
+    <span>status</span><span>predicates</span><span style="text-align: right;">actions</span>
+  </div>`;
+  const body = rules.map(r => {
+    const statusClass = r.status === "retired" ? "text-faint" : "ok";
+    const pcount = Array.isArray(r.predicates) ? r.predicates.length : 0;
+    return `<div class="tracked-row" style="
+      display: grid; grid-template-columns: 2fr 1.4fr 1.2fr 0.8fr 1fr auto;
+      gap: 10px; padding: 8px 10px; border: 1px solid var(--border);
+      background: var(--bg); margin-top: 4px; font-size: 12px; align-items: center;">
+      <span style="font-family: var(--mono); color: var(--text); word-break: break-all;">${escapeHtml(r.rule_id)}</span>
+      <span style="color: var(--text-dim);">${escapeHtml(r.sector)}</span>
+      <span style="color: var(--text-dim); font-size: 11px;">${escapeHtml(r.target)}</span>
+      <span style="color: var(--${r.status === "active" ? "ok" : "text-faint"});">${escapeHtml(r.status)}</span>
+      <span style="color: var(--text-faint); font-size: 11px;">${pcount} predicate${pcount === 1 ? "" : "s"}</span>
+      <span style="display: flex; gap: 6px; justify-content: flex-end;">
+        <button class="small" onclick="viewRuleHistory('${encodeURIComponent(r.rule_id)}', '${escapeHtml(r.rule_id).replace(/'/g, "&#39;")}')">history</button>
+        ${r.status === "active"
+          ? `<button class="small" onclick="retireRule('${encodeURIComponent(r.rule_id)}', '${escapeHtml(r.rule_id).replace(/'/g, "&#39;")}')">retire</button>`
+          : ""}
+      </span>
+    </div>`;
+  }).join("");
+  list.innerHTML = header + body;
+}
+
+function escapeHtml(s) {
+  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+window.viewRuleHistory = async function(ruleIdEnc, ruleIdDisplay) {
+  const ruleId = decodeURIComponent(ruleIdEnc);
+  const panel = document.getElementById("rule-history-panel");
+  const title = document.getElementById("history-rule-title");
+  const body = document.getElementById("history-body");
+  title.textContent = "history · " + ruleIdDisplay;
+  body.innerHTML = '<p class="empty-state">loading...</p>';
+  panel.style.display = "block";
+  try {
+    const r = await api("/rules/" + encodeURIComponent(ruleId) + "/history");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const j = await r.json();
+    renderHistory(j);
+  } catch (e) {
+    body.innerHTML = `<p class="empty-state" style="color: var(--err);">error: ${escapeHtml(e.message)}</p>`;
+  }
+};
+
+function renderHistory(j) {
+  const body = document.getElementById("history-body");
+  const runs = j.runs || [];
+  if (runs.length === 0) {
+    body.innerHTML = '<p class="empty-state">no runs recorded for this rule yet.</p>';
+    return;
+  }
+  // Chronological table
+  const header = `<div style="
+    display: grid; grid-template-columns: 1.4fr 1.6fr 0.8fr 0.9fr 0.9fr 0.9fr;
+    gap: 10px; padding: 6px 10px; color: var(--text-faint);
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+    border-bottom: 1px dashed var(--border-strong);">
+    <span>tested at</span><span>data span</span><span>rows</span>
+    <span>support</span><span>precision</span><span>lift</span>
+  </div>`;
+  const rows = runs.map(run => {
+    const ts = run.tested_at_utc ? new Date(run.tested_at_utc).toLocaleString() : "—";
+    const span = (run.data_span || []).join(" → ");
+    const prec = run.precision !== null && run.precision !== undefined ? run.precision.toFixed(4) : "—";
+    const lift = run.lift !== null && run.lift !== undefined ? run.lift.toFixed(3) : "—";
+    const sup = run.support !== null && run.support !== undefined ? run.support : "—";
+    const rows_ = run.n_rows !== null && run.n_rows !== undefined ? run.n_rows : "—";
+    return `<div style="
+      display: grid; grid-template-columns: 1.4fr 1.6fr 0.8fr 0.9fr 0.9fr 0.9fr;
+      gap: 10px; padding: 6px 10px; border-top: 1px solid var(--border);
+      font-size: 12px; align-items: center;">
+      <span style="color: var(--text-dim);">${escapeHtml(ts)}</span>
+      <span style="color: var(--text-dim); font-size: 11px;">${escapeHtml(span)}</span>
+      <span style="color: var(--text-faint);">${rows_}</span>
+      <span style="color: var(--text);">${sup}</span>
+      <span style="color: var(--text);">${prec}</span>
+      <span style="color: var(--accent);">${lift}</span>
+    </div>`;
+  }).join("");
+  // Simple trend indicator: precision delta first-to-last
+  let trend = "";
+  if (runs.length >= 2) {
+    const first = runs[0].precision, last = runs[runs.length - 1].precision;
+    if (first !== null && last !== null) {
+      const delta = (last - first);
+      const dclass = delta >= 0 ? "ok" : "err";
+      trend = `<p style="color: var(--text-dim); font-size: 11px; margin-top: 10px;">
+        precision change first→last: <span style="color: var(--${dclass});">${delta >= 0 ? "+" : ""}${delta.toFixed(4)}</span>
+        across ${runs.length} runs
+      </p>`;
+    }
+  }
+  body.innerHTML = header + rows + trend;
+}
+
+document.getElementById("history-close").onclick = () => {
+  document.getElementById("rule-history-panel").style.display = "none";
+};
+
+window.retireRule = async function(ruleIdEnc, ruleIdDisplay) {
+  const ruleId = decodeURIComponent(ruleIdEnc);
+  if (!confirm("Retire rule " + ruleIdDisplay + "?\n\n" +
+               "The rule's test history is preserved, but it is marked retired " +
+               "and drops out of the active list. This is reversible via API but " +
+               "not from the UI.")) return;
+  try {
+    const r = await postJSON("/rules/retire", { rule_id: ruleId });
+    if (!r.ok) {
+      const j = await r.json();
+      toast("Retire failed: " + (j.detail || r.status), "err");
+      return;
+    }
+    toast("Retired " + ruleIdDisplay, "ok");
+    refreshTracked();
+  } catch (e) {
+    toast(e.message, "err");
+  }
+};
+
+document.getElementById("refresh-tracked").onclick = refreshTracked;
+document.getElementById("show-retired").onchange = refreshTracked;
+
+
+// -------------------- v0.6.0 backtest ----------------------
+document.getElementById("bt-paste-toggle").onclick = () => {
+  const ta = document.getElementById("bt-paste-area");
+  const btn = document.getElementById("bt-paste-toggle");
+  if (ta.style.display === "none") {
+    ta.style.display = "block";
+    btn.textContent = "← use file picker";
+  } else {
+    ta.style.display = "none";
+    btn.textContent = "paste json instead →";
+  }
+};
+
+async function _readBacktestRule() {
+  const file = document.getElementById("bt-file").files[0];
+  const paste = document.getElementById("bt-paste-area").value.trim();
+  let text = "";
+  if (file) text = await file.text();
+  else if (paste) text = paste;
+  else throw new Error("Select a JSON file or paste rule JSON");
+  let obj;
+  try { obj = JSON.parse(text); } catch (e) { throw new Error("Invalid JSON: " + e.message); }
+  // Accept either {rules:[one]} or a bare rule dict
+  let rule;
+  if (Array.isArray(obj.rules)) {
+    if (obj.rules.length === 0) throw new Error("Bundle has no rules");
+    if (obj.rules.length > 1) {
+      // Pick the first as the backtest target — the user should paste just one
+      console.warn("Multiple rules provided; backtesting only the first:", obj.rules[0].id);
+    }
+    rule = obj.rules[0];
+  } else if (obj.id && obj.predicates) {
+    rule = obj;
+  } else {
+    throw new Error("JSON must be a rule object or a {rules:[...]} bundle");
+  }
+  return rule;
+}
+
+document.getElementById("bt-run").onclick = async () => {
+  const out = document.getElementById("bt-out");
+  out.className = "output show";
+  out.textContent = "reading rule...";
+  let rule;
+  try { rule = await _readBacktestRule(); }
+  catch (e) { out.className = "output show err"; out.textContent = e.message; toast(e.message, "err"); return; }
+
+  const regimeVal = document.getElementById("bt-regime").value.trim();
+  const excludeVal = document.getElementById("bt-exclude").value.trim();
+
+  // v0.7.0: collect conditional-exit branches if enabled
+  const condEnabled = document.getElementById("bt-cond-enable").checked;
+  const condExits = [];
+  if (condEnabled) {
+    for (const n of [1, 2]) {
+      const feat = document.getElementById("bt-cond-feature-" + n).value.trim();
+      if (!feat) continue;  // empty feature = skip this branch
+      const op = document.getElementById("bt-cond-op-" + n).value;
+      const valStr = document.getElementById("bt-cond-value-" + n).value;
+      if (valStr === "") continue;
+      condExits.push({
+        feature: feat,
+        op: op,
+        value: parseFloat(valStr),
+        tp_bps: parseFloat(document.getElementById("bt-cond-tp-" + n).value),
+        sl_bps: parseFloat(document.getElementById("bt-cond-sl-" + n).value),
+        position_size: parseFloat(document.getElementById("bt-cond-size-" + n).value) || 1.0,
+        label: document.getElementById("bt-cond-label-" + n).value.trim(),
+      });
+    }
+  }
+
+  const body = {
+    rule: rule,
+    tp_bps: parseFloat(document.getElementById("bt-tp").value) || 50,
+    sl_bps: parseFloat(document.getElementById("bt-sl").value) || 100,
+    timestop_et: (function() {
+      const v = document.getElementById("bt-timestop").value.trim();
+      return v === "" ? null : v;
+    })(),
+    slippage_bps: parseFloat(document.getElementById("bt-slippage").value) || 10,
+    spy_regime_filter: regimeVal === "" ? null : parseFloat(regimeVal),
+    symbol_exclude: excludeVal === "" ? [] : excludeVal.split(",").map(s => s.trim()).filter(Boolean),
+    start_date: document.getElementById("bt-start").value || null,
+    end_date: document.getElementById("bt-end").value || null,
+    just_in_time_backfill: document.getElementById("bt-jit").checked,
+    delete_raw_bars_after: false,
+    conditional_exits: condExits,
+  };
+
+  out.textContent = "running backtest... may take minutes with jit backfill on";
+  try {
+    const r = await postJSON("/backtest/run", body);
+    const j = await r.json();
+    if (!r.ok) {
+      out.className = "output show err";
+      out.textContent = JSON.stringify(j, null, 2);
+      toast("backtest failed: " + (j.detail || "see output"), "err");
+      return;
+    }
+    const lines = [];
+    lines.push("run_uuid:  " + j.run_uuid);
+    lines.push("rule:      " + j.rule_id);
+    lines.push("TP / SL:   " + j.tp_bps + " / " + j.sl_bps + " bps");
+    lines.push("slippage:  " + j.slippage_bps + " bps round-trip");
+    lines.push("timestop:  " + j.timestop_et + " ET");
+    if (j.spy_regime_filter !== null) lines.push("spy filter: " + j.spy_regime_filter);
+    if (j.symbol_exclude && j.symbol_exclude.length) lines.push("excluded:  " + j.symbol_exclude.join(","));
+    lines.push("");
+    lines.push("signals total:     " + j.n_signals_total);
+    lines.push("skipped (regime):  " + j.n_signals_skipped_regime);
+    lines.push("skipped (no_data): " + j.n_signals_no_data);
+    lines.push("trades:            " + j.n_trades);
+    lines.push("");
+    lines.push("win rate:          " + (j.win_rate * 100).toFixed(2) + "%");
+    lines.push("net pnl:           " + j.net_pnl_bps.toFixed(1) + " bps cumulative");
+    lines.push("avg net per trade: " + j.avg_net_bps_per_trade.toFixed(2) + " bps");
+    lines.push("");
+    lines.push("exit reason mix:");
+    for (const [k, v] of Object.entries(j.exit_reason_mix || {})) {
+      lines.push("  " + k + ": " + v);
+    }
+    // v0.7.0: per-branch breakdown if conditional exits were used
+    if (j.per_branch_stats && Object.keys(j.per_branch_stats).length > 0) {
+      lines.push("");
+      lines.push("per-branch breakdown (conditional exits):");
+      for (const [label, st] of Object.entries(j.per_branch_stats)) {
+        const tpUsed = st.tp_bps_used != null ? st.tp_bps_used : "?";
+        const slUsed = st.sl_bps_used != null ? st.sl_bps_used : "?";
+        lines.push(`  ${label} (TP ${tpUsed} / SL ${slUsed} / size ${st.position_size}x):`);
+        lines.push(`    n=${st.n}, TP=${st.tp_count}, SL=${st.sl_count}, TIME=${st.time_count}`);
+        lines.push(`    win rate ${(st.win_rate*100).toFixed(1)}%, avg ${st.avg_bps.toFixed(2)} bps, total ${st.total_bps.toFixed(0)} bps`);
+      }
+    }
+    // v0.6.1: surface NO_DATA diagnosis inline so the user can see
+    // whether missing signals cluster on specific dates or symbols
+    if (j.no_data_diagnosis && j.no_data_diagnosis.n_no_data > 0) {
+      lines.push("");
+      lines.push("NO_DATA diagnosis (why signals failed to simulate):");
+      lines.push("  total:       " + j.no_data_diagnosis.n_no_data);
+      if (j.no_data_diagnosis.by_month) {
+        lines.push("  by month:");
+        for (const [m, c] of Object.entries(j.no_data_diagnosis.by_month)) {
+          lines.push("    " + m + ": " + c);
+        }
+      }
+      if (j.no_data_diagnosis.top_symbols) {
+        lines.push("  top symbols (first 10):");
+        for (const [s, c] of Object.entries(j.no_data_diagnosis.top_symbols)) {
+          lines.push("    " + s + ": " + c);
+        }
+      }
+    }
+    lines.push("");
+    if (j.trades_csv_filename) {
+      lines.push("trades CSV: " + j.trades_csv_filename + " (in evidence packs)");
+    }
+    out.className = "output show ok";
+    out.textContent = lines.join("\n");
+    toast("backtest done: " + j.n_trades + " trades", "ok");
+    refreshBacktestRuns();
+  } catch (e) {
+    out.className = "output show err";
+    out.textContent = "request error: " + e.message;
+    toast("request error", "err");
+  }
+};
+
+async function refreshBacktestRuns() {
+  const list = document.getElementById("bt-runs-list");
+  try {
+    const r = await api("/backtest?limit=20");
+    const j = await r.json();
+    if (!r.ok) { list.innerHTML = '<p class="empty-state">failed: ' + (j.detail || "") + '</p>'; return; }
+    if (!j.runs || j.runs.length === 0) {
+      list.innerHTML = '<p class="empty-state">no backtest runs yet.</p>';
+      return;
+    }
+    const rows = j.runs.map(r => {
+      const rule = (() => { try { return JSON.parse(r.rule_json); } catch { return {}; } })();
+      const pnl = r.net_pnl_bps != null ? r.net_pnl_bps.toFixed(1) : "—";
+      const wr = r.win_rate != null ? (r.win_rate * 100).toFixed(1) + "%" : "—";
+      // v0.6.1: trades CSV is now written to evidence_packs at run time,
+      // so it's downloadable via /packs/{filename} (authed via packs UI).
+      const csvName = "backtest_" + r.run_uuid.slice(0,8) + "_trades.csv";
+      return `<tr>
+        <td style="font-family: var(--mono); font-size: 10px;">${r.run_uuid.slice(0,8)}</td>
+        <td>${rule.id || "?"}</td>
+        <td>${r.tp_bps}/${r.sl_bps}</td>
+        <td>${r.n_trades || 0}</td>
+        <td>${wr}</td>
+        <td style="color: ${parseFloat(pnl) >= 0 ? 'var(--ok)' : 'var(--err)'}">${pnl}</td>
+        <td>
+          <button class="small" data-filename="${csvName}" onclick="downloadPack(this)">csv</button>
+          <button class="small" data-uuid="${r.run_uuid}" onclick="diagnoseRun(this)" style="margin-left: 4px;">diagnose</button>
+          <button class="small" data-uuid="${r.run_uuid}" onclick="auditRun(this)" style="margin-left: 4px;">audit</button>
+          <button class="small" data-uuid="${r.run_uuid}" onclick="repairRun(this)" style="margin-left: 4px;">repair</button>
+        </td>
+      </tr>`;
+    }).join("");
+    list.innerHTML = `
+      <table style="width:100%; border-collapse: collapse; font-size: 12px;">
+        <thead><tr style="color: var(--text-faint); font-family: var(--mono);">
+          <th style="text-align:left; padding: 4px 6px;">uuid</th>
+          <th style="text-align:left; padding: 4px 6px;">rule</th>
+          <th style="text-align:left; padding: 4px 6px;">tp/sl</th>
+          <th style="text-align:left; padding: 4px 6px;">trades</th>
+          <th style="text-align:left; padding: 4px 6px;">win</th>
+          <th style="text-align:left; padding: 4px 6px;">pnl (bps)</th>
+          <th style="text-align:left; padding: 4px 6px;">csv</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch (e) {
+    list.innerHTML = '<p class="empty-state">request error: ' + (e.message || e) + '</p>';
+  }
+}
+
+// v0.6.1: authed download for pack CSVs uses the existing downloadPack(btn)
+// helper defined earlier (it reads data-filename from the button element).
+// The onclick handlers in the runs-list table below pass `this` so that
+// helper can read the attribute.
+
+document.getElementById("bt-runs-refresh").onclick = refreshBacktestRuns;
+document.getElementById("bt-diagnose-close").onclick = () => {
+  document.getElementById("bt-diagnose-panel").style.display = "none";
+};
+
+// v0.7.0: conditional exits toggle + presets
+document.getElementById("bt-cond-enable").onchange = (e) => {
+  document.getElementById("bt-cond-panel").style.display = e.target.checked ? "block" : "none";
+};
+function applyCondPreset(spec) {
+  // spec: array of up to 2 branches
+  const setField = (id, v) => { document.getElementById(id).value = v; };
+  const clearBranch = (n) => {
+    setField("bt-cond-feature-" + n, "");
+    setField("bt-cond-value-" + n, "");
+    setField("bt-cond-label-" + n, "");
+  };
+  clearBranch(1); clearBranch(2);
+  spec.forEach((b, i) => {
+    const n = i + 1;
+    setField("bt-cond-feature-" + n, b.feature);
+    document.getElementById("bt-cond-op-" + n).value = b.op;
+    setField("bt-cond-value-" + n, b.value);
+    setField("bt-cond-tp-" + n, b.tp_bps);
+    setField("bt-cond-sl-" + n, b.sl_bps);
+    setField("bt-cond-size-" + n, b.position_size);
+    setField("bt-cond-label-" + n, b.label);
+  });
+  // Auto-enable the panel if not already
+  const cb = document.getElementById("bt-cond-enable");
+  if (!cb.checked) { cb.checked = true; cb.dispatchEvent(new Event("change")); }
+  toast("preset applied", "ok");
+}
+document.getElementById("bt-cond-preset-C-simple").onclick = () => applyCondPreset([
+  { feature: "gap_filled", op: "==", value: 0, tp_bps: 75, sl_bps: 100, position_size: 1.0, label: "gap_open" },
+  { feature: "gap_filled", op: "==", value: 1, tp_bps: 50, sl_bps: 150, position_size: 1.0, label: "gap_filled" },
+]);
+document.getElementById("bt-cond-preset-C-scaled").onclick = () => applyCondPreset([
+  { feature: "gap_filled", op: "==", value: 0, tp_bps: 75, sl_bps: 100, position_size: 1.0, label: "gap_open" },
+  { feature: "gap_filled", op: "==", value: 1, tp_bps: 50, sl_bps: 150, position_size: 0.5, label: "gap_filled_half" },
+]);
+
+// v0.6.1: diagnose button on each row in the runs list.
+// Calls GET /backtest/{uuid}/diagnose (authed), renders results into
+// the #bt-diagnose-panel output block below the runs table.
+window.diagnoseRun = async function(btn) {
+  const uuid = btn.dataset.uuid;
+  const panel = document.getElementById("bt-diagnose-panel");
+  const body = document.getElementById("bt-diagnose-body");
+  const titleEl = document.getElementById("bt-diagnose-title");
+  panel.style.display = "block";
+  titleEl.textContent = "diagnose: " + uuid.slice(0, 8);
+  body.textContent = "loading...";
+  btn.disabled = true;
+  try {
+    const r = await api("/backtest/" + uuid + "/diagnose");
+    const j = await r.json();
+    if (!r.ok) { body.textContent = "failed: " + (j.detail || r.status); return; }
+    const lines = [];
+    lines.push("run:          " + uuid);
+    lines.push("total trades: " + j.n_trades_total);
+    lines.push("");
+    lines.push("exit reason mix:");
+    for (const [k, v] of Object.entries(j.exit_reason_mix || {})) {
+      lines.push("  " + k + ": " + v);
+    }
+    const nd = j.no_data_diagnosis || {};
+    lines.push("");
+    lines.push("NO_DATA count: " + (nd.n_no_data || 0));
+    if (nd.n_no_data > 0) {
+      lines.push("");
+      lines.push("by month (YYYY-MM → count):");
+      for (const [m, c] of Object.entries(nd.by_month || {})) {
+        lines.push("  " + m + ": " + c);
+      }
+      lines.push("");
+      lines.push("top symbols (first 10 in miss set):");
+      for (const [s, c] of Object.entries(nd.top_symbols || {})) {
+        lines.push("  " + s + ": " + c);
+      }
+      lines.push("");
+      lines.push("top dates (first 10 in miss set):");
+      for (const [d, c] of Object.entries(nd.top_dates || {})) {
+        lines.push("  " + d + ": " + c);
+      }
+    }
+    body.textContent = lines.join("\n");
+  } catch (e) {
+    body.textContent = "request error: " + (e.message || e);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+
+// v0.7.1: audit and repair — reference-simulator-backed verification.
+window.auditRun = async function(btn) {
+  const uuid = btn.dataset.uuid;
+  const panel = document.getElementById("bt-diagnose-panel");
+  const body = document.getElementById("bt-diagnose-body");
+  const titleEl = document.getElementById("bt-diagnose-title");
+  panel.style.display = "block";
+  titleEl.textContent = "audit: " + uuid.slice(0, 8);
+  body.textContent = "starting audit for " + uuid.slice(0, 8) + "...";
+  btn.disabled = true;
+  try {
+    const r = await api("/backtest/" + uuid + "/audit", { method: "POST" });
+    const text = await r.text();
+    let j;
+    try { j = JSON.parse(text); }
+    catch (e) {
+      body.textContent = "non-JSON response (status=" + r.status + "):\n" + text.slice(0, 600);
+      return;
+    }
+    if (!r.ok) { body.textContent = "failed to start (status=" + r.status + "): " + (j.detail || JSON.stringify(j)); return; }
+    const jobId = j.job_id;
+    body.textContent = "job started (" + jobId.slice(0, 8) + "). polling...";
+    // Poll until done
+    const result = await _pollJob(jobId, (status, elapsed) => {
+      body.textContent = "job " + jobId.slice(0, 8) + ": " + status + " (" + elapsed + "s elapsed)";
+    });
+    if (result.status === "failed") {
+      body.textContent = "audit job failed:\n\n" + (result.error || "(no error detail)").slice(0, 2000);
+      return;
+    }
+    const summary = result.result || {};
+    const lines = [];
+    lines.push("run:                         " + uuid);
+    lines.push("job:                         " + jobId);
+    lines.push("n_trades:                    " + summary.n_trades);
+    lines.push("stored total net bps:        " + summary.stored_total_net_bps);
+    lines.push("reference total net bps:     " + summary.ref_total_net_bps);
+    lines.push("");
+    lines.push("reason-mismatches:           " + summary.n_reason_mismatch);
+    lines.push("suspect TIME exits:          " + summary.n_suspect_time_exits);
+    lines.push("invariant violations:        " + summary.n_invariant_violations);
+    lines.push("pnl delta from mismatches:   " + summary.pnl_delta_from_mismatches_bps);
+    lines.push("suspect stored pnl:          " + summary.suspect_stored_pnl_bps);
+    lines.push("JIT backfills:               " + summary.jit_backfills_triggered);
+    lines.push("");
+    lines.push("exit-reason transitions (stored→reference):");
+    for (const [k, v] of Object.entries(summary.exit_reason_transitions || {})) {
+      lines.push("  " + k + ": " + v);
+    }
+    if (summary.pack_filename) {
+      lines.push("");
+      lines.push("evidence pack: " + summary.pack_filename);
+    }
+    body.textContent = lines.join("\n");
+  } catch (e) {
+    body.textContent = "request error: " + (e.message || e);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+async function _pollJob(jobId, onProgress) {
+  if (!jobId) throw new Error("no job_id received from server — likely old version deployed");
+  const start = Date.now();
+  let consecutive404s = 0;
+  while (true) {
+    await new Promise(res => setTimeout(res, 3000));
+    const r = await api("/jobs/" + jobId);
+    if (r.status === 404) {
+      // Multi-worker lag: the job may exist on a worker that didn't serve
+      // this GET. Tolerate a few consecutive 404s before giving up.
+      consecutive404s++;
+      const elapsed = Math.floor((Date.now() - start) / 1000);
+      if (consecutive404s < 5) {
+        if (onProgress) onProgress("syncing (" + consecutive404s + "/5 404s)", elapsed);
+        continue;
+      }
+      throw new Error("job " + jobId.slice(0,8) + " not found after " + consecutive404s + " polls. The worker that created it may have died. Check /jobs list to see if it succeeded under a different worker; a successful audit writes an evidence pack to /packs regardless.");
+    }
+    consecutive404s = 0;
+    if (!r.ok) {
+      const t = await r.text();
+      throw new Error("poll failed: status " + r.status + " body: " + t.slice(0, 200));
+    }
+    const j = await r.json();
+    const elapsed = Math.floor((Date.now() - start) / 1000);
+    if (j.status === "succeeded" || j.status === "failed") {
+      return j;
+    }
+    if (onProgress) onProgress(j.status, elapsed);
+    if (elapsed > 1800) throw new Error("poll timed out after 30 minutes");
+  }
+}
+
+window.repairRun = async function(btn) {
+  const uuid = btn.dataset.uuid;
+  const panel = document.getElementById("bt-diagnose-panel");
+  const body = document.getElementById("bt-diagnose-body");
+  const titleEl = document.getElementById("bt-diagnose-title");
+  panel.style.display = "block";
+  titleEl.textContent = "repair: " + uuid.slice(0, 8);
+  body.textContent = "starting repair for " + uuid.slice(0, 8) + "...";
+  btn.disabled = true;
+  try {
+    const r = await api("/backtest/" + uuid + "/repair", { method: "POST" });
+    const text = await r.text();
+    let j;
+    try { j = JSON.parse(text); }
+    catch (e) {
+      body.textContent = "non-JSON response (status=" + r.status + "):\n" + text.slice(0, 600);
+      return;
+    }
+    if (!r.ok) { body.textContent = "failed to start (status=" + r.status + "): " + (j.detail || JSON.stringify(j)); return; }
+    const jobId = j.job_id;
+    body.textContent = "job started (" + jobId.slice(0, 8) + "). polling...";
+    const result = await _pollJob(jobId, (status, elapsed) => {
+      body.textContent = "job " + jobId.slice(0, 8) + ": " + status + " (" + elapsed + "s elapsed)";
+    });
+    if (result.status === "failed") {
+      body.textContent = "repair job failed:\n\n" + (result.error || "(no error detail)").slice(0, 2000);
+      return;
+    }
+    const summary = result.result || {};
+    const lines = [];
+    lines.push("source run:   " + summary.source_run_uuid);
+    lines.push("new run:      " + summary.new_run_uuid);
+    lines.push("");
+    lines.push("corrected trades CSV: " + summary.trades_csv_url);
+    lines.push("");
+    lines.push("refreshing runs table...");
+    body.textContent = lines.join("\n");
+    refreshBacktestRuns();
+  } catch (e) {
+    body.textContent = "request error: " + (e.message || e);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+
+function toast(msg, kind) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.className = "show " + (kind || "");
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.className = kind || ""; }, 3200);
+}
+
+boot();
+</script>
+
+</body>
+</html>
