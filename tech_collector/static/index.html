@@ -405,7 +405,7 @@
       </span>
       <span style="display: flex; align-items: center; gap: 6px;">
         <input type="checkbox" id="rules-apply-filters" checked style="width: auto;">
-        <label for="rules-apply-filters" style="display: inline; text-transform: none; letter-spacing: 0; margin: 0;">apply standard filters</label>
+        <label for="rules-apply-filters" style="display: inline; text-transform: none; letter-spacing: 0; margin: 0;">apply standard filters (drops 09:30)</label>
       </span>
     </div>
   </div>
@@ -1357,6 +1357,8 @@ document.getElementById("rules-run").onclick = async () => {
   // UI date inputs override bundle dates when set.
   const uiStart = document.getElementById("rules-start").value || null;
   const uiEnd = document.getElementById("rules-end").value || null;
+  // When standard filters are off, the server still applies target-only safety filtering
+  // so NULL targets are excluded while 09:30 rows remain testable.
   const body = {
     rules: bundle.rules,
     start: uiStart || bundle.start || null,

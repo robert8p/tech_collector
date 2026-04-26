@@ -242,6 +242,58 @@ def apply_standard_filters(
     return df, diagnostics
 
 
+
+
+def apply_target_only_filters(
+    df: pd.DataFrame,
+    target: str,
+) -> tuple[pd.DataFrame, dict]:
+    """Apply only the non-negotiable filters needed for safe evaluation.
+
+    This keeps 09:30 rows and skips thin-tape filtering, but still removes rows
+    where the target or scan_price is missing/non-finite. It is the correct
+    tester population for opening-scan rules when standard filters are off.
+    """
+    n_input = len(df)
+    target_numeric = pd.to_numeric(df[target], errors="coerce")
+    scan_price_numeric = pd.to_numeric(df["scan_price"], errors="coerce")
+
+    n_null_target = int(target_numeric.isna().sum())
+    n_nonfinite_target = int((~np.isfinite(target_numeric.dropna())).sum())
+    n_null_scan_price = int(scan_price_numeric.isna().sum())
+    n_nonfinite_scan_price = int((~np.isfinite(scan_price_numeric.dropna())).sum())
+
+    valid = (
+        target_numeric.notna()
+        & np.isfinite(target_numeric)
+        & scan_price_numeric.notna()
+        & np.isfinite(scan_price_numeric)
+    )
+    out = df.loc[valid].copy()
+    if not out.empty:
+        out[target] = pd.to_numeric(out[target], errors="coerce").astype(np.int8)
+
+    diagnostics = {
+        "target_column": target,
+        "filter_mode": "target_only",
+        "rows_input": n_input,
+        "rows_with_null_target": n_null_target,
+        "rows_with_nonfinite_target": n_nonfinite_target,
+        "rows_with_null_scan_price": n_null_scan_price,
+        "rows_with_nonfinite_scan_price": n_nonfinite_scan_price,
+        "rows_after_null_drop": len(out),
+        "rows_dropped_0930": 0,
+        "rows_dropped_thin_tape": 0,
+        "rows_final": len(out),
+    }
+    if n_input > 0 and n_null_target > 0:
+        diagnostics["warning"] = (
+            f"{n_null_target:,} of {n_input:,} rows have NULL {target}. "
+            "They were excluded with target-only filtering; 09:30 rows were kept."
+        )
+    return out, diagnostics
+
+
 # ---------------------------------------------------------------------------
 # Per-fold evaluation
 # ---------------------------------------------------------------------------
@@ -509,8 +561,12 @@ def test_rule_bundle(
         diagnostics: dict = {}
         if apply_filters:
             rdf, diagnostics = apply_standard_filters(rdf, rule.target)
-            if "warning" in diagnostics and diagnostics["warning"] not in warnings_seen:
-                warnings_seen.append(diagnostics["warning"])
+        else:
+            # Keep 09:30 rows for opening-scan rules, but still remove NULL/non-finite
+            # target and scan_price rows so evaluation can safely cast the target.
+            rdf, diagnostics = apply_target_only_filters(rdf, rule.target)
+        if "warning" in diagnostics and diagnostics["warning"] not in warnings_seen:
+            warnings_seen.append(diagnostics["warning"])
         if rdf.empty:
             results.append({
                 "rule_id": rule.id,

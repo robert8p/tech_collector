@@ -262,6 +262,7 @@ def source_version():
     from . import feature_computer as _fc
     from . import storage as _st
     from . import backtest_audit as _ba
+    from . import rule_tester as _rt
 
     out = {
         "version": config.APP_VERSION,
@@ -273,6 +274,7 @@ def source_version():
         ("api", __import__("tech_collector.api", fromlist=["api"])),
         ("storage", _st),
         ("backtest_audit", _ba),
+        ("rule_tester", _rt),
     ]:
         try:
             src_path = inspect.getsourcefile(mod) or "<unknown>"
