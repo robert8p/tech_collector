@@ -1,0 +1,40 @@
+{
+  "preset_type": "tech_collector_backtest_preset",
+  "preset_version": 1,
+  "description": "Rule 003 path-dependent backtest preset: target_only, TP 75 bps, SL 150 bps, min exit delay 1 minute, validation+holdout date range.",
+  "rule": {
+    "id": "tech_rule_003_opening_positive_open_below_vwap",
+    "sector": "Information Technology",
+    "target": "target",
+    "predicates": [
+      {
+        "feature": "minutes_since_open",
+        "op": "==",
+        "value": 0
+      },
+      {
+        "feature": "open_to_scan_return",
+        "op": ">=",
+        "value": 0
+      },
+      {
+        "feature": "distance_to_vwap",
+        "op": "<=",
+        "value": -0.00424026608256934
+      }
+    ]
+  },
+  "tp_bps": 75,
+  "sl_bps": 150,
+  "timestop_et": "15:50",
+  "slippage_bps": 10,
+  "spy_regime_filter": null,
+  "symbol_exclude": [],
+  "start_date": "2025-10-01",
+  "end_date": "2026-04-17",
+  "filter_mode": "target_only",
+  "min_exit_minutes": 1,
+  "just_in_time_backfill": true,
+  "delete_raw_bars_after": false,
+  "conditional_exits": []
+}

@@ -1109,6 +1109,15 @@ class BacktestRunRequest(BaseModel):
             "opening-scan rules."
         ),
     )
+    min_exit_minutes: int = Field(
+        default=0,
+        ge=0,
+        le=10,
+        description=(
+            "Minimum minutes after the entry timestamp before TP/SL exits are allowed. "
+            "Use 1 to audit 09:30 rules without same-minute exits. Default 0 preserves legacy behavior."
+        ),
+    )
     just_in_time_backfill: bool = Field(
         default=True,
         description=(
@@ -1353,6 +1362,7 @@ def backtest_run(req: BacktestRunRequest):
         symbol_exclude=req.symbol_exclude,
         start_date=req.start_date, end_date=req.end_date,
         filter_mode=req.filter_mode,
+        min_exit_minutes=req.min_exit_minutes,
         just_in_time_backfill=req.just_in_time_backfill,
         delete_raw_bars_after=req.delete_raw_bars_after,
         conditional_exits=cond_branches,

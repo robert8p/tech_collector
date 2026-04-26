@@ -153,6 +153,11 @@ class BacktestConfig:
     # "target_only" keeps 09:30 rows but still drops rows with null target/scan_price.
     # This is required for opening-scan rule backtests without reintroducing NULL-target crashes.
     filter_mode: str = "standard"
+    # v0.7.18: minimum minutes after the entry timestamp before TP/SL exits are allowed.
+    # Use 1 for a conservative audit of 09:30 rules so same-minute bar highs/lows
+    # cannot dominate results. Entry price remains the scan_price; only exit
+    # eligibility is delayed. Legacy default is 0.
+    min_exit_minutes: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +172,7 @@ def _simulate_trade(
     timestop_et_hhmm: str,
     slippage_bps: float,
     entry_slippage_split: float,
+    min_exit_minutes: int = 0,
 ) -> dict:
     """Walk forward through minute bars from entry_ts onwards.
 
@@ -256,6 +262,15 @@ def _simulate_trade(
     tp_price = effective_entry * (1 + tp_level / 10_000.0)
     sl_price = effective_entry * (1 - sl_level / 10_000.0)
 
+    # v0.7.18: conservative same-minute-exit audit control.
+    # If min_exit_minutes=1, a 09:30 signal cannot exit from the 09:30 bar's
+    # high/low. This does not claim to be final execution realism; it is a
+    # deliberate bias check for opening-scan rules.
+    try:
+        min_exit_minutes_int = max(0, int(min_exit_minutes or 0))
+    except (TypeError, ValueError):
+        min_exit_minutes_int = 0
+
     # Pre-parse all relevant bars once, in ET, for the main loop + audit.
     # This eliminates re-parsing mistakes and gives us a guaranteed-correct
     # timeline to scan during the fallback.
@@ -275,6 +290,8 @@ def _simulate_trade(
 
     # Main loop: iterate post-entry bars once, check timestop -> TP/SL
     for bar_dt, et_hh, et_mm, bar in parsed:
+        minutes_from_entry = int((bar_dt - entry_dt).total_seconds() / 60)
+        exit_eligible = minutes_from_entry >= min_exit_minutes_int
         # Has timestop triggered? Check BEFORE processing TP/SL so we don't
         # award a post-timestop TP exit.
         if timestop_enabled and ((et_hh > timestop_h) or (et_hh == timestop_h and et_mm >= timestop_m)):
@@ -319,7 +336,9 @@ def _simulate_trade(
                 "net_return_bps": net_bps,
             }
 
-        # Check intra-bar TP and SL
+        # Check intra-bar TP and SL only after the configured minimum exit delay.
+        if not exit_eligible:
+            continue
         hit_tp = bar["high"] >= tp_price
         hit_sl = bar["low"] <= sl_price
         if hit_tp and hit_sl:
@@ -353,6 +372,9 @@ def _simulate_trade(
     # (e.g. timezone-conversion errors causing bars to be misinterpreted).
     if parsed:
         for bar_dt, et_hh, et_mm, bar in parsed:
+            minutes_from_entry = int((bar_dt - entry_dt).total_seconds() / 60)
+            if minutes_from_entry < min_exit_minutes_int:
+                continue
             if bar["high"] >= tp_price and bar["low"] <= sl_price:
                 # Ambiguous: SL first (conservative)
                 exit_price_raw = sl_price
@@ -678,6 +700,7 @@ def run_backtest(
                     timestop_et_hhmm=bt.timestop_et,
                     slippage_bps=bt.slippage_bps,
                     entry_slippage_split=bt.entry_slippage_split,
+                    min_exit_minutes=bt.min_exit_minutes,
                 )
                 # Apply position_size multiplier to net_return_bps only —
                 # gross is the true pre-sizing outcome, net reflects realized
@@ -734,7 +757,7 @@ def run_backtest(
             "n_trades": n_trades,
             "net_pnl_bps": net_pnl_bps,
             "win_rate": win_rate,
-            "notes": f"filter_mode={bt.filter_mode}",
+            "notes": f"filter_mode={bt.filter_mode}; min_exit_minutes={bt.min_exit_minutes}",
             "conditional_exits_json": cond_exits_serialized,
         })
         storage.insert_backtest_trades(conn, run_uuid, trades)
@@ -767,6 +790,7 @@ def run_backtest(
         "timestop_et": bt.timestop_et,
         "spy_regime_filter": bt.spy_regime_filter,
         "filter_mode": bt.filter_mode,
+        "min_exit_minutes": bt.min_exit_minutes,
         "symbol_exclude": bt.symbol_exclude,
         "n_signals_total": n_signals_total,
         "n_signals_skipped_regime": n_skipped_regime,

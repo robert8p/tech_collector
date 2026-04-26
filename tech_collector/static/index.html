@@ -466,12 +466,14 @@
   </p>
 
   <div class="row">
-    <label>rule bundle (json, single rule)</label>
-    <input type="file" id="bt-file" accept=".json">
+    <label title="Upload either a bare rule bundle or a full backtest preset JSON. A preset can populate rule, TP/SL, dates, filter mode, min exit delay, JIT and conditional exits.">backtest preset / rule bundle (json)</label>
+    <input type="file" id="bt-file" accept=".json,application/json">
     <button class="small" id="bt-paste-toggle" style="margin-left: auto;">paste json instead →</button>
+    <button class="small" id="bt-download-preset" type="button" title="Download the currently visible backtest settings as a reusable preset JSON.">download current preset ↓</button>
   </div>
+  <div id="bt-preset-status" style="display:none; margin-top: 6px; color: var(--text-dim); font-size: 11px; font-style: italic;"></div>
   <textarea id="bt-paste-area" style="display: none; width: 100%; min-height: 120px; font-family: var(--mono); font-size: 11px; padding: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border-strong);"
-    placeholder='{"rules":[{"id":"...","sector":"...","target":"...","predicates":[...]}]}'></textarea>
+    placeholder='Upload/paste either {"rules":[...]} or a full preset: {"rule":{...},"tp_bps":50,"sl_bps":100,"filter_mode":"target_only",...}'></textarea>
 
   <div class="row" style="gap: 12px; margin-top: 10px;">
     <div style="flex: 1;">
@@ -531,9 +533,13 @@
         <option value="target_only">target_only — keep 09:30, drop invalid targets</option>
       </select>
     </div>
+    <div style="flex: 1;">
+      <label title="Minimum minutes after entry before TP/SL can fire. Set 1 for 09:30 same-bar bias audit.">min exit delay (min)</label>
+      <input type="number" id="bt-min-exit-minutes" value="0" min="0" max="10" step="1">
+    </div>
     <div style="flex: 2; display: flex; align-items: center; padding-bottom: 8px;">
       <span style="color: var(--text-faint); font-size: 11px; font-style: italic;">
-        Use target_only for opening 09:30 rules. Use standard for later-scan rules.
+        Use target_only for opening 09:30 rules. Set min exit delay = 1 to audit/remove same-minute exits.
       </span>
     </div>
   </div>
@@ -1629,31 +1635,223 @@ document.getElementById("bt-paste-toggle").onclick = () => {
   }
 };
 
+function _btStatus(msg, kind="info") {
+  const el = document.getElementById("bt-preset-status");
+  if (!el) return;
+  el.style.display = "block";
+  el.style.color = kind === "err" ? "var(--bad)" : (kind === "ok" ? "var(--good)" : "var(--text-dim)");
+  el.textContent = msg;
+}
+
+function _firstPresent(obj, keys, fallback=undefined) {
+  if (!obj) return fallback;
+  for (const k of keys) {
+    if (Object.prototype.hasOwnProperty.call(obj, k) && obj[k] !== undefined) return obj[k];
+  }
+  return fallback;
+}
+
+function _normaliseBacktestPreset(obj) {
+  // Accepted shapes:
+  // 1) bare rule: {id, sector, target, predicates}
+  // 2) bundle: {rules:[rule]}
+  // 3) preset: {rule:{...}, tp_bps:50, ...}
+  // 4) preset wrapper: {backtest:{rule:{...}, tp_bps:50, ...}}
+  if (!obj || typeof obj !== "object") throw new Error("Preset JSON must be an object");
+  const nested = (obj.backtest && typeof obj.backtest === "object") ? obj.backtest : {};
+  const cfg = Object.assign({}, obj, nested);
+
+  let rule = null;
+  if (cfg.rule && cfg.rule.predicates) rule = cfg.rule;
+  else if (Array.isArray(cfg.rules) && cfg.rules.length > 0) rule = cfg.rules[0];
+  else if (obj.id && obj.predicates) rule = obj;
+
+  if (Array.isArray(cfg.rules) && cfg.rules.length > 1) {
+    console.warn("Multiple rules provided; backtesting only the first:", cfg.rules[0].id);
+  }
+  return { rule, cfg };
+}
+
+function _setInputIfPresent(id, value) {
+  if (value === undefined) return;
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.value = (value === null) ? "" : String(value);
+}
+
+function _setCheckboxIfPresent(id, value) {
+  if (value === undefined) return;
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.checked = Boolean(value);
+}
+
+function _setSelectIfPresent(id, value) {
+  if (value === undefined || value === null) return;
+  const el = document.getElementById(id);
+  if (!el) return;
+  const v = String(value);
+  const allowed = Array.from(el.options).map(o => o.value);
+  if (allowed.includes(v)) el.value = v;
+}
+
+function _setConditionalPanelVisible() {
+  const panel = document.getElementById("bt-cond-panel");
+  const cb = document.getElementById("bt-cond-enable");
+  if (panel && cb) panel.style.display = cb.checked ? "block" : "none";
+}
+
+function _applyConditionalExitPreset(exits) {
+  if (!Array.isArray(exits) || exits.length === 0) {
+    _setCheckboxIfPresent("bt-cond-enable", false);
+    _setConditionalPanelVisible();
+    return;
+  }
+  _setCheckboxIfPresent("bt-cond-enable", true);
+  _setConditionalPanelVisible();
+  for (const n of [1, 2]) {
+    const ex = exits[n-1] || {};
+    _setInputIfPresent("bt-cond-feature-" + n, ex.feature || "");
+    _setSelectIfPresent("bt-cond-op-" + n, ex.op || "==");
+    _setInputIfPresent("bt-cond-value-" + n, ex.value ?? "");
+    _setInputIfPresent("bt-cond-tp-" + n, ex.tp_bps ?? ex.tp ?? "");
+    _setInputIfPresent("bt-cond-sl-" + n, ex.sl_bps ?? ex.sl ?? "");
+    _setInputIfPresent("bt-cond-size-" + n, ex.position_size ?? ex.size ?? 1.0);
+    _setInputIfPresent("bt-cond-label-" + n, ex.label || "");
+  }
+  if (exits.length > 2) {
+    _btStatus("Preset loaded, but only the first 2 conditional-exit branches are visible in this UI.", "info");
+  }
+}
+
+function _applyBacktestPreset(obj, sourceName="uploaded JSON") {
+  const { rule, cfg } = _normaliseBacktestPreset(obj);
+  if (rule) {
+    document.getElementById("bt-paste-area").value = JSON.stringify({ rules: [rule] }, null, 2);
+  }
+
+  _setInputIfPresent("bt-tp", _firstPresent(cfg, ["tp_bps", "tp", "take_profit_bps"]));
+  _setInputIfPresent("bt-sl", _firstPresent(cfg, ["sl_bps", "sl", "stop_loss_bps"]));
+  _setInputIfPresent("bt-timestop", _firstPresent(cfg, ["timestop_et", "timestop", "time_stop_et"]));
+  _setInputIfPresent("bt-slippage", _firstPresent(cfg, ["slippage_bps", "slippage"]));
+  _setInputIfPresent("bt-regime", _firstPresent(cfg, ["spy_regime_filter", "spy_filter", "regime_filter"]));
+
+  const ex = _firstPresent(cfg, ["symbol_exclude", "exclude_symbols", "symbols_exclude"]);
+  if (Array.isArray(ex)) _setInputIfPresent("bt-exclude", ex.join(","));
+  else _setInputIfPresent("bt-exclude", ex);
+
+  _setInputIfPresent("bt-start", _firstPresent(cfg, ["start_date", "start"]));
+  _setInputIfPresent("bt-end", _firstPresent(cfg, ["end_date", "end"]));
+  _setSelectIfPresent("bt-filter-mode", _firstPresent(cfg, ["filter_mode", "signal_filter_mode"]));
+  _setInputIfPresent("bt-min-exit-minutes", _firstPresent(cfg, ["min_exit_minutes", "min_exit_delay", "min_exit_delay_minutes"]));
+  _setCheckboxIfPresent("bt-jit", _firstPresent(cfg, ["just_in_time_backfill", "jit_backfill", "jit"]));
+
+  const cond = _firstPresent(cfg, ["conditional_exits", "conditional_exit_branches"]);
+  if (cond !== undefined) _applyConditionalExitPreset(cond);
+
+  const loadedBits = [];
+  if (rule) loadedBits.push("rule " + (rule.id || "(unnamed)"));
+  const knownFields = ["tp_bps", "sl_bps", "timestop_et", "slippage_bps", "start_date", "end_date", "filter_mode", "min_exit_minutes", "just_in_time_backfill"];
+  const nKnown = knownFields.filter(k => cfg[k] !== undefined).length;
+  if (nKnown || cond !== undefined) loadedBits.push("settings");
+  _btStatus("Loaded " + (loadedBits.join(" + ") || "JSON") + " from " + sourceName + ".", "ok");
+  return { rule, cfg };
+}
+
+document.getElementById("bt-file").onchange = async () => {
+  const file = document.getElementById("bt-file").files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const obj = JSON.parse(text);
+    _applyBacktestPreset(obj, file.name);
+  } catch (e) {
+    _btStatus("Could not load preset: " + e.message, "err");
+    toast("Could not load backtest preset", "err");
+  }
+};
+
 async function _readBacktestRule() {
   const file = document.getElementById("bt-file").files[0];
   const paste = document.getElementById("bt-paste-area").value.trim();
   let text = "";
   if (file) text = await file.text();
   else if (paste) text = paste;
-  else throw new Error("Select a JSON file or paste rule JSON");
+  else throw new Error("Select a JSON preset/rule file or paste rule JSON");
   let obj;
   try { obj = JSON.parse(text); } catch (e) { throw new Error("Invalid JSON: " + e.message); }
-  // Accept either {rules:[one]} or a bare rule dict
-  let rule;
-  if (Array.isArray(obj.rules)) {
-    if (obj.rules.length === 0) throw new Error("Bundle has no rules");
-    if (obj.rules.length > 1) {
-      // Pick the first as the backtest target — the user should paste just one
-      console.warn("Multiple rules provided; backtesting only the first:", obj.rules[0].id);
-    }
-    rule = obj.rules[0];
-  } else if (obj.id && obj.predicates) {
-    rule = obj;
-  } else {
-    throw new Error("JSON must be a rule object or a {rules:[...]} bundle");
-  }
+  const { rule } = _normaliseBacktestPreset(obj);
+  if (!rule) throw new Error("JSON must contain a rule object, a {rules:[...]} bundle, or a backtest preset with rule/rules");
   return rule;
 }
+
+function _collectConditionalExitsFromUI() {
+  const condEnabled = document.getElementById("bt-cond-enable").checked;
+  const condExits = [];
+  if (!condEnabled) return condExits;
+  for (const n of [1, 2]) {
+    const feat = document.getElementById("bt-cond-feature-" + n).value.trim();
+    if (!feat) continue;  // empty feature = skip this branch
+    const op = document.getElementById("bt-cond-op-" + n).value;
+    const valStr = document.getElementById("bt-cond-value-" + n).value;
+    if (valStr === "") continue;
+    condExits.push({
+      feature: feat,
+      op: op,
+      value: parseFloat(valStr),
+      tp_bps: parseFloat(document.getElementById("bt-cond-tp-" + n).value),
+      sl_bps: parseFloat(document.getElementById("bt-cond-sl-" + n).value),
+      position_size: parseFloat(document.getElementById("bt-cond-size-" + n).value) || 1.0,
+      label: document.getElementById("bt-cond-label-" + n).value.trim(),
+    });
+  }
+  return condExits;
+}
+
+async function _currentBacktestPresetObject() {
+  const rule = await _readBacktestRule();
+  const regimeVal = document.getElementById("bt-regime").value.trim();
+  const excludeVal = document.getElementById("bt-exclude").value.trim();
+  return {
+    preset_type: "tech_collector_backtest_preset",
+    preset_version: 1,
+    rule: rule,
+    tp_bps: parseFloat(document.getElementById("bt-tp").value) || 50,
+    sl_bps: parseFloat(document.getElementById("bt-sl").value) || 100,
+    timestop_et: (function() {
+      const v = document.getElementById("bt-timestop").value.trim();
+      return v === "" ? null : v;
+    })(),
+    slippage_bps: parseFloat(document.getElementById("bt-slippage").value) || 10,
+    spy_regime_filter: regimeVal === "" ? null : parseFloat(regimeVal),
+    symbol_exclude: excludeVal === "" ? [] : excludeVal.split(",").map(s => s.trim()).filter(Boolean),
+    start_date: document.getElementById("bt-start").value || null,
+    end_date: document.getElementById("bt-end").value || null,
+    filter_mode: document.getElementById("bt-filter-mode").value || "standard",
+    min_exit_minutes: parseInt(document.getElementById("bt-min-exit-minutes").value || "0", 10),
+    just_in_time_backfill: document.getElementById("bt-jit").checked,
+    delete_raw_bars_after: false,
+    conditional_exits: _collectConditionalExitsFromUI(),
+  };
+}
+
+document.getElementById("bt-download-preset").onclick = async () => {
+  try {
+    const preset = await _currentBacktestPresetObject();
+    const safeRule = String(preset.rule.id || "backtest_rule").replace(/[^a-zA-Z0-9_-]+/g, "_");
+    const blob = new Blob([JSON.stringify(preset, null, 2)], {type: "application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = safeRule + "_backtest_preset.json";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+    _btStatus("Downloaded reusable preset for " + (preset.rule.id || "rule") + ".", "ok");
+  } catch (e) {
+    _btStatus("Could not download preset: " + e.message, "err");
+    toast("Could not download preset", "err");
+  }
+};
 
 document.getElementById("bt-run").onclick = async () => {
   const out = document.getElementById("bt-out");
@@ -1702,6 +1900,7 @@ document.getElementById("bt-run").onclick = async () => {
     start_date: document.getElementById("bt-start").value || null,
     end_date: document.getElementById("bt-end").value || null,
     filter_mode: document.getElementById("bt-filter-mode").value || "standard",
+    min_exit_minutes: parseInt(document.getElementById("bt-min-exit-minutes").value || "0", 10),
     just_in_time_backfill: document.getElementById("bt-jit").checked,
     delete_raw_bars_after: false,
     conditional_exits: condExits,
@@ -1725,6 +1924,7 @@ document.getElementById("bt-run").onclick = async () => {
     lines.push("timestop:  " + j.timestop_et + " ET");
     if (j.spy_regime_filter !== null) lines.push("spy filter: " + j.spy_regime_filter);
     if (j.filter_mode) lines.push("filter:    " + j.filter_mode);
+    if (j.min_exit_minutes !== undefined) lines.push("min exit delay: " + j.min_exit_minutes + " min");
     if (j.symbol_exclude && j.symbol_exclude.length) lines.push("excluded:  " + j.symbol_exclude.join(","));
     lines.push("");
     lines.push("signals total:     " + j.n_signals_total);

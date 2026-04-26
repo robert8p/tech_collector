@@ -1,0 +1,40 @@
+{
+  "preset_type": "tech_collector_backtest_preset",
+  "preset_version": 1,
+  "description": "Rule 001 path-dependent backtest preset: target_only, TP 100 bps, SL 200 bps, min exit delay 1 minute, validation+holdout date range.",
+  "rule": {
+    "id": "tech_rule_001_opening_ema20_pullback_high_rvol",
+    "sector": "Information Technology",
+    "target": "target",
+    "predicates": [
+      {
+        "feature": "minutes_since_open",
+        "op": "==",
+        "value": 0
+      },
+      {
+        "feature": "ema_20_distance",
+        "op": "<=",
+        "value": -0.0012848156778654195
+      },
+      {
+        "feature": "relative_volume",
+        "op": ">=",
+        "value": 1.6114982197992596
+      }
+    ]
+  },
+  "tp_bps": 100,
+  "sl_bps": 200,
+  "timestop_et": "15:50",
+  "slippage_bps": 10,
+  "spy_regime_filter": null,
+  "symbol_exclude": [],
+  "start_date": "2025-10-01",
+  "end_date": "2026-04-17",
+  "filter_mode": "target_only",
+  "min_exit_minutes": 1,
+  "just_in_time_backfill": true,
+  "delete_raw_bars_after": false,
+  "conditional_exits": []
+}
