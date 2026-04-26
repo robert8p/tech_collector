@@ -523,6 +523,21 @@
     </div>
   </div>
 
+  <div class="row" style="gap: 12px; margin-top: 6px;">
+    <div style="flex: 1;">
+      <label title="standard drops 09:30 and thin-tape rows. target_only keeps 09:30 while still dropping NULL target/scan_price rows.">signal filter mode</label>
+      <select id="bt-filter-mode">
+        <option value="standard">standard — drop 09:30/thin tape</option>
+        <option value="target_only">target_only — keep 09:30, drop invalid targets</option>
+      </select>
+    </div>
+    <div style="flex: 2; display: flex; align-items: center; padding-bottom: 8px;">
+      <span style="color: var(--text-faint); font-size: 11px; font-style: italic;">
+        Use target_only for opening 09:30 rules. Use standard for later-scan rules.
+      </span>
+    </div>
+  </div>
+
   <div style="margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--border-strong); background: var(--bg);">
     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
       <input type="checkbox" id="bt-cond-enable" style="width: auto;">
@@ -1686,6 +1701,7 @@ document.getElementById("bt-run").onclick = async () => {
     symbol_exclude: excludeVal === "" ? [] : excludeVal.split(",").map(s => s.trim()).filter(Boolean),
     start_date: document.getElementById("bt-start").value || null,
     end_date: document.getElementById("bt-end").value || null,
+    filter_mode: document.getElementById("bt-filter-mode").value || "standard",
     just_in_time_backfill: document.getElementById("bt-jit").checked,
     delete_raw_bars_after: false,
     conditional_exits: condExits,
@@ -1708,6 +1724,7 @@ document.getElementById("bt-run").onclick = async () => {
     lines.push("slippage:  " + j.slippage_bps + " bps round-trip");
     lines.push("timestop:  " + j.timestop_et + " ET");
     if (j.spy_regime_filter !== null) lines.push("spy filter: " + j.spy_regime_filter);
+    if (j.filter_mode) lines.push("filter:    " + j.filter_mode);
     if (j.symbol_exclude && j.symbol_exclude.length) lines.push("excluded:  " + j.symbol_exclude.join(","));
     lines.push("");
     lines.push("signals total:     " + j.n_signals_total);

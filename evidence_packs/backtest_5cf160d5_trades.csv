@@ -1,0 +1,2 @@
+symbol,signal_date,signal_time_et,entry_price,exit_price,exit_time_et,exit_reason,minutes_held,gross_return_bps,net_return_bps,branch_label,position_size,tp_bps_used,sl_bps_used,run_uuid
+SMCI,2024-11-14,10:30,19.18,19.18,NA,NO_DATA,0,0.0,0.0,,1.0,75.0,100.0,5cf160d5-582e-4515-9062-d0c75441d87b

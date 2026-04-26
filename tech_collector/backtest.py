@@ -148,6 +148,11 @@ class BacktestConfig:
     # against branches in order and the FIRST match wins. If no branch
     # matches, fall back to the top-level tp_bps/sl_bps and position_size=1.
     conditional_exits: list[ConditionalExitBranch] = field(default_factory=list)
+    # v0.7.16: signal-row filtering mode.
+    # "standard" preserves legacy behavior: drop 09:30 and thin-tape rows.
+    # "target_only" keeps 09:30 rows but still drops rows with null target/scan_price.
+    # This is required for opening-scan rule backtests without reintroducing NULL-target crashes.
+    filter_mode: str = "standard"
 
 
 # ---------------------------------------------------------------------------
@@ -453,7 +458,18 @@ def _load_signals(
     )
     if df.empty:
         return df
-    df, _diag = rule_tester.apply_standard_filters(df, bt.rule.target)
+    filter_mode = (bt.filter_mode or "standard").strip().lower()
+    if filter_mode in {"target_only", "target-only", "targetonly"}:
+        df, _diag = rule_tester.apply_standard_filters(
+            df, bt.rule.target, drop_0930=False, thin_tape_fraction=None
+        )
+    elif filter_mode == "standard":
+        df, _diag = rule_tester.apply_standard_filters(df, bt.rule.target)
+    else:
+        raise ValueError(
+            f"Unsupported backtest filter_mode {bt.filter_mode!r}. "
+            "Use 'standard' or 'target_only'."
+        )
     mask = rule_tester.rule_mask(df, bt.rule)
     signals = df[mask].copy()
     # Drop excluded symbols
@@ -718,7 +734,7 @@ def run_backtest(
             "n_trades": n_trades,
             "net_pnl_bps": net_pnl_bps,
             "win_rate": win_rate,
-            "notes": None,
+            "notes": f"filter_mode={bt.filter_mode}",
             "conditional_exits_json": cond_exits_serialized,
         })
         storage.insert_backtest_trades(conn, run_uuid, trades)
@@ -750,6 +766,7 @@ def run_backtest(
         "slippage_bps": bt.slippage_bps,
         "timestop_et": bt.timestop_et,
         "spy_regime_filter": bt.spy_regime_filter,
+        "filter_mode": bt.filter_mode,
         "symbol_exclude": bt.symbol_exclude,
         "n_signals_total": n_signals_total,
         "n_signals_skipped_regime": n_skipped_regime,

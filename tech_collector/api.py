@@ -1100,6 +1100,15 @@ class BacktestRunRequest(BaseModel):
     )
     start_date: str | None = Field(default=None, description="YYYY-MM-DD. Defaults to all available.")
     end_date: str | None = Field(default=None, description="YYYY-MM-DD. Defaults to all available.")
+    filter_mode: str = Field(
+        default="standard",
+        description=(
+            "Backtest signal-row filter mode. 'standard' keeps legacy behavior "
+            "and drops 09:30 plus thin-tape rows. 'target_only' keeps 09:30 rows "
+            "but still drops rows with NULL target/scan_price. Use target_only for "
+            "opening-scan rules."
+        ),
+    )
     just_in_time_backfill: bool = Field(
         default=True,
         description=(
@@ -1343,6 +1352,7 @@ def backtest_run(req: BacktestRunRequest):
         spy_regime_filter=req.spy_regime_filter,
         symbol_exclude=req.symbol_exclude,
         start_date=req.start_date, end_date=req.end_date,
+        filter_mode=req.filter_mode,
         just_in_time_backfill=req.just_in_time_backfill,
         delete_raw_bars_after=req.delete_raw_bars_after,
         conditional_exits=cond_branches,
