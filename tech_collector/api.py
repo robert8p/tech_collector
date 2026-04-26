@@ -1118,6 +1118,15 @@ class BacktestRunRequest(BaseModel):
             "Use 1 to audit 09:30 rules without same-minute exits. Default 0 preserves legacy behavior."
         ),
     )
+    entry_delay_minutes: int = Field(
+        default=0,
+        ge=0,
+        le=10,
+        description=(
+            "Delay entry after the scan timestamp by N minutes. 0 = legacy scan_price entry. "
+            "1 = enter at the next minute bar open, useful for conservative 09:30 execution audits."
+        ),
+    )
     just_in_time_backfill: bool = Field(
         default=True,
         description=(
@@ -1363,6 +1372,7 @@ def backtest_run(req: BacktestRunRequest):
         start_date=req.start_date, end_date=req.end_date,
         filter_mode=req.filter_mode,
         min_exit_minutes=req.min_exit_minutes,
+        entry_delay_minutes=req.entry_delay_minutes,
         just_in_time_backfill=req.just_in_time_backfill,
         delete_raw_bars_after=req.delete_raw_bars_after,
         conditional_exits=cond_branches,

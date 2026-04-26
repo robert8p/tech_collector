@@ -155,9 +155,14 @@ class BacktestConfig:
     filter_mode: str = "standard"
     # v0.7.18: minimum minutes after the entry timestamp before TP/SL exits are allowed.
     # Use 1 for a conservative audit of 09:30 rules so same-minute bar highs/lows
-    # cannot dominate results. Entry price remains the scan_price; only exit
+    # cannot dominate results. Entry price remains the configured entry reference; only exit
     # eligibility is delayed. Legacy default is 0.
     min_exit_minutes: int = 0
+    # v0.7.20: delay the simulated entry itself after the scan timestamp.
+    # 0 = legacy: fill at research_rows.scan_price at the scan timestamp.
+    # 1 = conservative opening audit: if a 09:30 signal fires, enter at the 09:31
+    # raw bar open instead of assuming a fill at the 09:30 scan_price.
+    entry_delay_minutes: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -648,17 +653,52 @@ def run_backtest(
                     })
                 continue
             for _, sig in group.iterrows():
-                # Find the bar matching the scan time (first bar at/after
-                # scan_time_et) on the correct ET trading date.
+                # Find the entry bar.
+                #
+                # v0.7.20: optional delayed-entry audit. With entry_delay_minutes=0
+                # we preserve legacy behavior: entry timestamp is the scan bar and
+                # entry price is research_rows.scan_price. With entry_delay_minutes>0
+                # we intentionally simulate a stricter live-executable path: wait N
+                # minutes after the scan and enter at the delayed raw bar's OPEN.
+                #
+                # For the 09:30 rules this lets us test a conservative sequence:
+                #   signal known at/after 09:30 -> enter at 09:31 open -> optionally
+                #   require min_exit_minutes=1 so TP/SL cannot fire until 09:32.
+                try:
+                    entry_delay_int = max(0, int(bt.entry_delay_minutes or 0))
+                except (TypeError, ValueError):
+                    entry_delay_int = 0
+
+                entry_time_et = (
+                    _hhmm_plus_minutes(sig["scan_time_et"], entry_delay_int)
+                    if entry_delay_int > 0 else sig["scan_time_et"]
+                )
+
                 # v0.7.11: pass `date` so we don't accidentally match prior-
                 # day after-hours bars that leak in via the UTC-date query.
                 entry_bar_ts = _find_scan_bar_ts(
-                    bars, sig["scan_time_et"], signal_date_et=date,
+                    bars, entry_time_et, signal_date_et=date,
                 )
+                entry_price_source = "scan_price"
+                entry_price_used = float(sig["scan_price"])
+
+                if entry_bar_ts is not None and entry_delay_int > 0:
+                    entry_bar = _find_bar_by_ts(bars, entry_bar_ts)
+                    if entry_bar is None:
+                        entry_bar_ts = None
+                    else:
+                        entry_price_used = float(entry_bar["open"])
+                        entry_price_source = f"delayed_bar_open_plus_{entry_delay_int}m"
+
                 if entry_bar_ts is None:
                     trades.append({
                         "symbol": symbol, "signal_date": date,
                         "signal_time_et": sig["scan_time_et"],
+                        "scan_price_ref": float(sig["scan_price"]),
+                        "entry_time_et": entry_time_et,
+                        "entry_ts_utc": "NA",
+                        "entry_delay_minutes": entry_delay_int,
+                        "entry_price_source": entry_price_source,
                         "entry_price": float(sig["scan_price"]),
                         "exit_price": float(sig["scan_price"]),
                         "exit_time_et": "NA",
@@ -694,7 +734,7 @@ def run_backtest(
                 result = _simulate_trade(
                     bars=bars,
                     entry_ts_utc=entry_bar_ts,
-                    entry_price=float(sig["scan_price"]),
+                    entry_price=entry_price_used,
                     tp_level=tp_eff,
                     sl_level=sl_eff,
                     timestop_et_hhmm=bt.timestop_et,
@@ -711,7 +751,12 @@ def run_backtest(
                 trades.append({
                     "symbol": symbol, "signal_date": date,
                     "signal_time_et": sig["scan_time_et"],
-                    "entry_price": float(sig["scan_price"]),
+                    "scan_price_ref": float(sig["scan_price"]),
+                    "entry_time_et": entry_time_et,
+                    "entry_ts_utc": entry_bar_ts,
+                    "entry_delay_minutes": entry_delay_int,
+                    "entry_price_source": entry_price_source,
+                    "entry_price": entry_price_used,
                     "branch_label": branch_label,
                     "position_size": size_mult,
                     "tp_bps_used": tp_eff,
@@ -757,7 +802,7 @@ def run_backtest(
             "n_trades": n_trades,
             "net_pnl_bps": net_pnl_bps,
             "win_rate": win_rate,
-            "notes": f"filter_mode={bt.filter_mode}; min_exit_minutes={bt.min_exit_minutes}",
+            "notes": f"filter_mode={bt.filter_mode}; min_exit_minutes={bt.min_exit_minutes}; entry_delay_minutes={bt.entry_delay_minutes}",
             "conditional_exits_json": cond_exits_serialized,
         })
         storage.insert_backtest_trades(conn, run_uuid, trades)
@@ -791,6 +836,7 @@ def run_backtest(
         "spy_regime_filter": bt.spy_regime_filter,
         "filter_mode": bt.filter_mode,
         "min_exit_minutes": bt.min_exit_minutes,
+        "entry_delay_minutes": bt.entry_delay_minutes,
         "symbol_exclude": bt.symbol_exclude,
         "n_signals_total": n_signals_total,
         "n_signals_skipped_regime": n_skipped_regime,
@@ -864,6 +910,27 @@ def _count_exits(trades: list[dict]) -> dict:
     from collections import Counter
     c = Counter(t["exit_reason"] for t in trades)
     return dict(c)
+
+
+
+def _hhmm_plus_minutes(hhmm: str, minutes: int) -> str:
+    """Return HH:MM shifted forward by `minutes` within a trading day.
+
+    v0.7.20: used for delayed-entry execution audits. This is intentionally
+    simple: scan times are intraday ET HH:MM strings, and we only support
+    non-negative minute delays for same-day testing.
+    """
+    hh, mm = map(int, hhmm.split(":"))
+    total = hh * 60 + mm + max(0, int(minutes or 0))
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def _find_bar_by_ts(bars: list[dict], timestamp_utc: str) -> dict | None:
+    """Return the raw bar matching timestamp_utc, or None."""
+    for b in bars:
+        if b.get("timestamp_utc") == timestamp_utc:
+            return b
+    return None
 
 
 def _find_scan_bar_ts(

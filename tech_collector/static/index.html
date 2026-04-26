@@ -534,12 +534,16 @@
       </select>
     </div>
     <div style="flex: 1;">
+      <label title="Delay entry after the scan timestamp. 0 = legacy scan_price fill. 1 = enter at next minute bar open.">entry delay (min)</label>
+      <input type="number" id="bt-entry-delay-minutes" value="0" min="0" max="10" step="1">
+    </div>
+    <div style="flex: 1;">
       <label title="Minimum minutes after entry before TP/SL can fire. Set 1 for 09:30 same-bar bias audit.">min exit delay (min)</label>
       <input type="number" id="bt-min-exit-minutes" value="0" min="0" max="10" step="1">
     </div>
-    <div style="flex: 2; display: flex; align-items: center; padding-bottom: 8px;">
+    <div style="flex: 1; display: flex; align-items: center; padding-bottom: 8px;">
       <span style="color: var(--text-faint); font-size: 11px; font-style: italic;">
-        Use target_only for opening 09:30 rules. Set min exit delay = 1 to audit/remove same-minute exits.
+        For strict 09:30 audit use target_only, entry delay = 1, min exit delay = 1.
       </span>
     </div>
   </div>
@@ -1743,6 +1747,7 @@ function _applyBacktestPreset(obj, sourceName="uploaded JSON") {
   _setInputIfPresent("bt-start", _firstPresent(cfg, ["start_date", "start"]));
   _setInputIfPresent("bt-end", _firstPresent(cfg, ["end_date", "end"]));
   _setSelectIfPresent("bt-filter-mode", _firstPresent(cfg, ["filter_mode", "signal_filter_mode"]));
+  _setInputIfPresent("bt-entry-delay-minutes", _firstPresent(cfg, ["entry_delay_minutes", "entry_delay", "entry_delay_min"]));
   _setInputIfPresent("bt-min-exit-minutes", _firstPresent(cfg, ["min_exit_minutes", "min_exit_delay", "min_exit_delay_minutes"]));
   _setCheckboxIfPresent("bt-jit", _firstPresent(cfg, ["just_in_time_backfill", "jit_backfill", "jit"]));
 
@@ -1751,7 +1756,7 @@ function _applyBacktestPreset(obj, sourceName="uploaded JSON") {
 
   const loadedBits = [];
   if (rule) loadedBits.push("rule " + (rule.id || "(unnamed)"));
-  const knownFields = ["tp_bps", "sl_bps", "timestop_et", "slippage_bps", "start_date", "end_date", "filter_mode", "min_exit_minutes", "just_in_time_backfill"];
+  const knownFields = ["tp_bps", "sl_bps", "timestop_et", "slippage_bps", "start_date", "end_date", "filter_mode", "entry_delay_minutes", "min_exit_minutes", "just_in_time_backfill"];
   const nKnown = knownFields.filter(k => cfg[k] !== undefined).length;
   if (nKnown || cond !== undefined) loadedBits.push("settings");
   _btStatus("Loaded " + (loadedBits.join(" + ") || "JSON") + " from " + sourceName + ".", "ok");
@@ -1828,6 +1833,7 @@ async function _currentBacktestPresetObject() {
     start_date: document.getElementById("bt-start").value || null,
     end_date: document.getElementById("bt-end").value || null,
     filter_mode: document.getElementById("bt-filter-mode").value || "standard",
+    entry_delay_minutes: parseInt(document.getElementById("bt-entry-delay-minutes").value || "0", 10),
     min_exit_minutes: parseInt(document.getElementById("bt-min-exit-minutes").value || "0", 10),
     just_in_time_backfill: document.getElementById("bt-jit").checked,
     delete_raw_bars_after: false,
@@ -1900,6 +1906,7 @@ document.getElementById("bt-run").onclick = async () => {
     start_date: document.getElementById("bt-start").value || null,
     end_date: document.getElementById("bt-end").value || null,
     filter_mode: document.getElementById("bt-filter-mode").value || "standard",
+    entry_delay_minutes: parseInt(document.getElementById("bt-entry-delay-minutes").value || "0", 10),
     min_exit_minutes: parseInt(document.getElementById("bt-min-exit-minutes").value || "0", 10),
     just_in_time_backfill: document.getElementById("bt-jit").checked,
     delete_raw_bars_after: false,
@@ -1924,6 +1931,7 @@ document.getElementById("bt-run").onclick = async () => {
     lines.push("timestop:  " + j.timestop_et + " ET");
     if (j.spy_regime_filter !== null) lines.push("spy filter: " + j.spy_regime_filter);
     if (j.filter_mode) lines.push("filter:    " + j.filter_mode);
+    if (j.entry_delay_minutes !== undefined) lines.push("entry delay: " + j.entry_delay_minutes + " min");
     if (j.min_exit_minutes !== undefined) lines.push("min exit delay: " + j.min_exit_minutes + " min");
     if (j.symbol_exclude && j.symbol_exclude.length) lines.push("excluded:  " + j.symbol_exclude.join(","));
     lines.push("");
