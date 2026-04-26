@@ -1,0 +1,2 @@
+symbol,signal_date,signal_time_et,entry_price,branch_label,position_size,tp_bps_used,sl_bps_used,exit_price,exit_time_et,exit_reason,minutes_held,gross_return_bps,net_return_bps,run_uuid
+IT,2026-02-03,10:30,154.7,,1.0,75.0,100.0,154.58397499999998,15:50,TIME,320,0.0,-14.9887584311776,53e0e2d9-7a69-45e9-80f0-61b0bdc60bc8

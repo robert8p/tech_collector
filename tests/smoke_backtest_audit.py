@@ -461,6 +461,230 @@ def test_timestop_1550_does_not_fire_at_1530():
            f"got {result['exit_reason']}")
 
 
+def test_v0711_phantom_bug_regression():
+    """v0.7.11 regression test for the canonical phantom-TIME bug.
+
+    The bug: get_raw_bars_for_day used `date(timestamp_utc)` (UTC date),
+    which leaked in prior-day after-hours bars (UTC 00:00-05:00 = ET 19:00-
+    00:00 of the previous day). _find_scan_bar_ts then matched the FIRST
+    bar with ET hour >= target — which on a typical day was the previous
+    day's 19:00 ET after-hours bar appearing first in the UTC-sorted list.
+    The simulator anchored "scan time" to that bogus bar, fired the timestop
+    on the next iteration, and wrote phantom-TIME exits with bogus gross
+    P&L from after-hours price gaps.
+
+    This test injects the exact production condition: bars for an ET
+    trading date (Feb 3 2026) PLUS prior-day after-hours bars whose UTC
+    date equals the requested date. Pre-fix, the engine produces an
+    exit_time_et like "19:00" with minutes_held=0. Post-fix, it produces
+    exit_time_et "15:50" with minutes_held=320.
+    """
+    import tempfile, shutil, os
+    from datetime import date as _date
+    from tech_collector import config, storage
+
+    tmpdir = tempfile.mkdtemp(prefix="phantom_regr_")
+    db = os.path.join(tmpdir, "test.db")
+    orig_db = config.DB_PATH
+    config.DB_PATH = db
+    try:
+        storage.init_schema(db)
+        storage.init_backtest_schema(db)
+
+        bars = []
+        # Feb 2 2026 evening after-hours: ET 19:00-19:59 = UTC 00:00-00:59 Feb 3
+        # These bars have UTC date = "2026-02-03" but ET date = "2026-02-02"
+        for utc_min in range(0, 60, 5):
+            bars.append({
+                "symbol": "IT",
+                "timestamp_utc": f"2026-02-03T00:{utc_min:02d}:00Z",
+                "open": 200.0, "high": 201.0, "low": 199.5, "close": 200.5,
+                "volume": 100, "vwap": 200.0, "trade_count": 5,
+                "sector": "Information Technology",
+            })
+        # Feb 3 regular session: ET 09:30-15:59 = UTC 14:30-20:59 (winter)
+        # Stock walks flat — no TP/SL hit. Timestop at 15:50 should fire.
+        for utc_h in range(14, 21):
+            for utc_m in range(0, 60):
+                if utc_h == 14 and utc_m < 30:
+                    continue
+                if utc_h == 21 and utc_m > 0:
+                    continue
+                bars.append({
+                    "symbol": "IT",
+                    "timestamp_utc": f"2026-02-03T{utc_h:02d}:{utc_m:02d}:00Z",
+                    "open": 154.7, "high": 154.85, "low": 154.6, "close": 154.7,
+                    "volume": 1000, "vwap": 154.7, "trade_count": 50,
+                    "sector": "Information Technology",
+                })
+        # SPY for regime features
+        for utc_h in range(14, 21):
+            for utc_m in range(0, 60, 30):
+                if utc_h == 14 and utc_m < 30:
+                    continue
+                bars.append({
+                    "symbol": "SPY",
+                    "timestamp_utc": f"2026-02-03T{utc_h:02d}:{utc_m:02d}:00Z",
+                    "open": 500.0, "high": 500.5, "low": 499.5, "close": 500.0,
+                    "volume": 1000000, "vwap": 500.0, "trade_count": 1000,
+                    "sector": None,
+                })
+
+        with storage.connect(db) as conn:
+            storage.insert_bars(
+                conn, bars, feed="sip",
+                pulled_at_utc="2026-02-03T22:00:00Z",
+                sector="Information Technology",
+            )
+
+        # Insert minimal research_row so the rule fires
+        rr = {
+            "symbol": "IT", "date": "2026-02-03", "scan_time_et": "10:30",
+            "sector": "Information Technology",
+            "minutes_since_open": 60, "scan_price": 154.7,
+            "open_to_scan_return": 0.001, "gap_pct": 0.0,
+            "intraday_range_position": 0.5,
+            "distance_to_vwap": 0.0, "distance_to_day_high": 0.0,
+            "distance_to_day_low": 0.0,
+            "rsi_14": 60.0, "macd_hist": 0.1,
+            "ema_9_distance": 0.001, "ema_20_distance": 0.001,
+            "ema_50_distance": 0.001,
+            "relative_volume": 1.5, "realized_vol_so_far": 0.005,
+            "sector_relative_strength": 0.0,
+            "day_of_week": "Tue", "cutoff_time_et": "15:30",
+            "cutoff_price": 154.7,
+            "return_to_cutoff": 0.0, "min_return_before_cutoff": -0.001,
+            "max_return_before_cutoff": 0.001, "rs_leakfree": 0.0,
+            "return_at_scan_plus_30m": 0.0, "return_at_scan_plus_60m": 0.0,
+            "return_at_scan_plus_90m": 0.0, "return_at_scan_plus_120m": 0.0,
+            "bars_missing_pre_scan": 0, "bars_missing_post_scan": 0,
+            "feed_source": "sip", "pulled_at_utc": "2026-02-03T22:00:00Z",
+            "momentum": 0.005, "rel_volume_r2k": 1.5, "vwap_slope": 0.001,
+            "orb_strength": 0.0,
+            "atr_reach": 1.0, "spy_ret": 0.001, "ret_vs_spy": 0.0,
+            "spy_momentum": 0.001, "mom_vs_spy": 0.001, "spy_vol": 0.005,
+            "gap_filled": 0, "range_tightness_30m": 0.005,
+            "bars_in_range_20bps": 5, "is_nr7": 0,
+            "dist_to_day_high_bps": 50, "broke_day_high_this_bar": 0,
+            "broke_opening_range_high": 0, "bars_since_day_high": 30,
+            "dist_to_prev_close_bps": 50, "dist_to_5d_high_bps": 100,
+            "dist_to_20d_high_bps": 200, "days_since_20d_high": 5,
+            "volume_acceleration": 1.0, "cumulative_volume_vs_typical": 1.0,
+            "sector_breadth_up": 0.5, "new_highs_in_sector": 5,
+            "target_25bps": 1, "target_peak_25bps": 1,
+            "target_50bps": 1, "target_peak_50bps": 1,
+            "target_75bps": 1, "target_peak_75bps": 1, "target": 1,
+            "regime_ok": 1,
+        }
+        with storage.connect(db) as conn:
+            storage.insert_research_rows(conn, [rr])
+
+        from tech_collector import rule_tester, backtest as _bt
+        rule = rule_tester.Rule.from_dict({
+            "id": "phantom-regr-test",
+            "sector": "Information Technology",
+            "target": "target_peak_75bps",
+            "predicates": [{"feature": "momentum", "op": ">", "value": 0.002}],
+        })
+        bt_config = _bt.BacktestConfig(
+            rule=rule, tp_bps=75.0, sl_bps=100.0, timestop_et="15:50",
+            slippage_bps=15.0, just_in_time_backfill=False,
+            conditional_exits=[],
+        )
+        result = _bt.run_backtest(bt_config, db_path=db)
+        with storage.connect(db) as conn:
+            trades = storage.get_backtest_trades(conn, result["run_uuid"])
+
+        _check("phantom-regr: produced exactly 1 trade",
+               len(trades) == 1, f"got {len(trades)}")
+        if not trades:
+            return
+        t = trades[0]
+        _check("phantom-regr: exit_time_et is 15:50 (timestop), NOT 19:xx",
+               t["exit_time_et"] == "15:50",
+               f"got exit_time_et={t['exit_time_et']!r}")
+        _check("phantom-regr: TIME exit has nonzero minutes_held",
+               t["minutes_held"] > 0,
+               f"got minutes_held={t['minutes_held']}")
+        _check("phantom-regr: minutes_held is ~320 (10:30 → 15:50)",
+               300 <= t["minutes_held"] <= 340,
+               f"got minutes_held={t['minutes_held']}")
+        _check("phantom-regr: gross within invariant bounds",
+               -101 <= t["gross_return_bps"] <= 76,
+               f"got gross={t['gross_return_bps']:.2f}")
+        _check("phantom-regr: exit_reason is TIME",
+               t["exit_reason"] == "TIME",
+               f"got exit_reason={t['exit_reason']!r}")
+    finally:
+        config.DB_PATH = orig_db
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_v0711_get_raw_bars_filters_by_et_date():
+    """Direct test of storage.get_raw_bars_for_day's ET-date filter.
+
+    Pre-v0.7.11 used `date(timestamp_utc) = ?` which is UTC. Post-v0.7.11
+    uses a UTC range that exactly covers one ET trading date.
+    """
+    import tempfile, shutil, os
+    from tech_collector import storage
+    tmpdir = tempfile.mkdtemp(prefix="raw_bars_filter_")
+    db = os.path.join(tmpdir, "test.db")
+    try:
+        storage.init_schema(db)
+        # Insert bars at three boundary times:
+        bars = [
+            # ET 19:00 Feb 2 = UTC 00:00 Feb 3 (winter EST). UTC date = Feb 3,
+            # ET date = Feb 2. Should NOT be returned for date="2026-02-02".
+            {
+                "symbol": "TEST",
+                "timestamp_utc": "2026-02-03T00:00:00Z",
+                "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0,
+                "volume": 1, "vwap": 1.0, "trade_count": 1,
+                "sector": None,
+            },
+            # ET 10:30 Feb 3 = UTC 15:30 Feb 3. Both Feb 3.
+            {
+                "symbol": "TEST",
+                "timestamp_utc": "2026-02-03T15:30:00Z",
+                "open": 2.0, "high": 2.0, "low": 2.0, "close": 2.0,
+                "volume": 1, "vwap": 2.0, "trade_count": 1,
+                "sector": None,
+            },
+            # ET 19:00 Feb 3 = UTC 00:00 Feb 4. UTC date = Feb 4, ET date = Feb 3.
+            # SHOULD be returned for date="2026-02-03".
+            {
+                "symbol": "TEST",
+                "timestamp_utc": "2026-02-04T00:00:00Z",
+                "open": 3.0, "high": 3.0, "low": 3.0, "close": 3.0,
+                "volume": 1, "vwap": 3.0, "trade_count": 1,
+                "sector": None,
+            },
+        ]
+        with storage.connect(db) as conn:
+            storage.insert_bars(conn, bars, feed="sip",
+                                pulled_at_utc="2026-02-03T22:00:00Z",
+                                sector=None)
+            feb2_bars = storage.get_raw_bars_for_day(conn, "TEST", "2026-02-02")
+            feb3_bars = storage.get_raw_bars_for_day(conn, "TEST", "2026-02-03")
+            feb4_bars = storage.get_raw_bars_for_day(conn, "TEST", "2026-02-04")
+
+        # Feb 2 ET: only the first bar (UTC 00:00 Feb 3 = ET 19:00 Feb 2)
+        _check("raw_bars filter: Feb 2 ET returns 1 bar (the prior-day AH)",
+               len(feb2_bars) == 1,
+               f"got {len(feb2_bars)} bars")
+        # Feb 3 ET: middle and last bar
+        _check("raw_bars filter: Feb 3 ET returns 2 bars (regular + AH)",
+               len(feb3_bars) == 2,
+               f"got {len(feb3_bars)} bars")
+        # Feb 4 ET: nothing
+        _check("raw_bars filter: Feb 4 ET returns 0 bars",
+               len(feb4_bars) == 0,
+               f"got {len(feb4_bars)} bars")
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 def main() -> int:
     print("SMOKE: backtest_audit + _simulate_trade fix")
     print("=" * 60)
@@ -484,6 +708,9 @@ def main() -> int:
         test_no_timestop_empty_string_is_treated_as_disabled,
         test_timestop_1550_fires_after_1530,
         test_timestop_1550_does_not_fire_at_1530,
+        # v0.7.11
+        test_v0711_phantom_bug_regression,
+        test_v0711_get_raw_bars_filters_by_et_date,
     ]
     for t in tests:
         try:

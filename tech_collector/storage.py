@@ -286,14 +286,45 @@ def get_raw_bars_for_day(
 ) -> list[dict]:
     """Return all minute bars for (symbol, date) in ascending timestamp order.
 
+    The `date` argument is interpreted as an **ET trading date**. Bars are
+    returned for the regular ET session (09:30-16:00) plus pre-market and
+    after-hours of that ET day, but NOT for the prior or next ET day's
+    after-hours that overlap the same UTC calendar date.
+
+    v0.7.11: previously this used `date(timestamp_utc) = ?` which is a UTC
+    filter. That leaked in prior-day AH bars (UTC 00:00-05:00 = ET 19:00-
+    00:00 of the previous day) and dropped same-day late-AH bars (UTC
+    00:00-01:00 next day = ET 19:00-20:00 of the requested day). The leak
+    caused the backtest engine to anchor "scan time" against the prior
+    day's evening bars, producing phantom-TIME exits with after-hours
+    price gaps as fake P&L. The fix: query a UTC range that exactly
+    covers ET 00:00-23:59 of the requested date, accounting for DST.
+
+    For ET = UTC-5 (winter EST): ET date X → UTC range [X 05:00, X+1 05:00)
+    For ET = UTC-4 (summer EDT): ET date X → UTC range [X 04:00, X+1 04:00)
+
+    We compute the actual offset via zoneinfo to handle DST transitions.
+
     Each bar: {'timestamp_utc', 'open', 'high', 'low', 'close', 'volume'}
     """
+    # Compute UTC range that covers exactly one ET trading date.
+    from datetime import datetime, timedelta, time
+    from zoneinfo import ZoneInfo
+    ET = ZoneInfo("America/New_York")
+    UTC = ZoneInfo("UTC")
+    et_date = datetime.fromisoformat(date).date()
+    start_et = datetime.combine(et_date, time(0, 0), tzinfo=ET)
+    end_et = start_et + timedelta(days=1)
+    start_utc = start_et.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    end_utc = end_et.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     rows = conn.execute(
         """SELECT timestamp_utc, open, high, low, close, volume
            FROM raw_bars
-           WHERE symbol = ? AND date(timestamp_utc) = ?
+           WHERE symbol = ?
+             AND timestamp_utc >= ?
+             AND timestamp_utc < ?
            ORDER BY timestamp_utc""",
-        (symbol, date),
+        (symbol, start_utc, end_utc),
     ).fetchall()
     return [dict(r) for r in rows]
 
@@ -301,16 +332,28 @@ def get_raw_bars_for_day(
 def delete_raw_bars_for_day(
     conn: sqlite3.Connection, symbol: str, date: str, preserve_spy: bool = True,
 ) -> int:
-    """Delete raw_bars for a single (symbol, date). Returns rows deleted.
+    """Delete raw_bars for a single (symbol, ET trading date). Returns rows deleted.
 
     By default preserves SPY — the SPY-relative features in other analyses
     rely on SPY being available; the backtest also needs SPY bars itself.
+
+    v0.7.11: now filters by ET date (matching get_raw_bars_for_day's fix).
     """
     if preserve_spy and symbol == "SPY":
         return 0
+    from datetime import datetime, timedelta, time
+    from zoneinfo import ZoneInfo
+    ET = ZoneInfo("America/New_York")
+    UTC = ZoneInfo("UTC")
+    et_date = datetime.fromisoformat(date).date()
+    start_et = datetime.combine(et_date, time(0, 0), tzinfo=ET)
+    end_et = start_et + timedelta(days=1)
+    start_utc = start_et.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    end_utc = end_et.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     cur = conn.execute(
-        "DELETE FROM raw_bars WHERE symbol = ? AND date(timestamp_utc) = ?",
-        (symbol, date),
+        "DELETE FROM raw_bars WHERE symbol = ? "
+        "AND timestamp_utc >= ? AND timestamp_utc < ?",
+        (symbol, start_utc, end_utc),
     )
     return cur.rowcount or 0
 

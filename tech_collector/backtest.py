@@ -541,8 +541,12 @@ def run_backtest(
                 continue
             for _, sig in group.iterrows():
                 # Find the bar matching the scan time (first bar at/after
-                # scan_time_et); use that as entry timestamp reference.
-                entry_bar_ts = _find_scan_bar_ts(bars, sig["scan_time_et"])
+                # scan_time_et) on the correct ET trading date.
+                # v0.7.11: pass `date` so we don't accidentally match prior-
+                # day after-hours bars that leak in via the UTC-date query.
+                entry_bar_ts = _find_scan_bar_ts(
+                    bars, sig["scan_time_et"], signal_date_et=date,
+                )
                 if entry_bar_ts is None:
                     trades.append({
                         "symbol": symbol, "signal_date": date,
@@ -751,23 +755,46 @@ def _count_exits(trades: list[dict]) -> dict:
     return dict(c)
 
 
-def _find_scan_bar_ts(bars: list[dict], scan_time_et: str) -> str | None:
-    """Return the timestamp_utc of the first bar at/after scan_time_et.
+def _find_scan_bar_ts(
+    bars: list[dict],
+    scan_time_et: str,
+    signal_date_et: str | None = None,
+) -> str | None:
+    """Return the timestamp_utc of the first bar at/after scan_time_et on
+    the requested ET trading date.
+
+    v0.7.11: now requires the bar's ET date to equal `signal_date_et`. The
+    raw_bars query (storage.get_raw_bars_for_day) filters by UTC date, which
+    leaks in after-hours bars from the *previous* ET trading day (UTC 00:00
+    to ~05:00 = ET 19:00–00:00 of the prior day). Without an ET-date guard,
+    `_find_scan_bar_ts(bars, "10:30")` would match the first bar with
+    `et.hour >= 10` — which on a typical day is the previous day's 19:00 ET
+    after-hours bar appearing in the list at UTC 00:00. The simulator then
+    walked from that bar, fired the timestop on the next bar (also after-
+    hours, et.hour >= 16), and produced phantom-TIME exits with bogus
+    gross returns from after-hours price gaps.
+
+    The fix is one line: also require `et.date() == signal_date_et`.
+
+    `signal_date_et` defaults to None for backward compatibility with old
+    callers/tests; in that mode we fall back to the legacy "first bar
+    at/after target hour anywhere in the list" behaviour. Production
+    `run_backtest` always passes the date.
 
     v0.7.8: switched from the month-boundary _utc_hour_to_et approximation
-    to zoneinfo via _bar_ts_to_et. The old function was off-by-one-hour
-    on roughly the first week of March (pre-DST, actually EST but code
-    assumed EDT) and the first few days of November (post-DST, actually
-    still EDT but code assumed EST). That bug caused entries to be taken
-    from the wrong bar on affected days — about 3-4% of trading days per
-    year. Fix preserves identical behaviour on all other days.
+    to zoneinfo via _bar_ts_to_et.
     """
     target_hh, target_mm = map(int, scan_time_et.split(":"))
+    target_date = None
+    if signal_date_et:
+        target_date = datetime.fromisoformat(signal_date_et).date()
     for b in bars:
         bdt = datetime.fromisoformat(b["timestamp_utc"].replace("Z", "+00:00"))
         if bdt.tzinfo is None:
             bdt = bdt.replace(tzinfo=timezone.utc)
         et = _bar_ts_to_et(bdt)
+        if target_date is not None and et.date() != target_date:
+            continue
         if et.hour > target_hh or (et.hour == target_hh and et.minute >= target_mm):
             return b["timestamp_utc"]
     return None
