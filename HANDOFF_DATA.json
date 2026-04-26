@@ -1,47 +1,62 @@
 {
   "_meta": {
-    "session_ending_version": "0.7.13",
-    "deployed_version_verified": "0.7.12",
-    "deployment_status_v0_7_13": "code complete, NOT yet deployed",
-    "timestamp_iso": "2026-04-26T15:00:00Z",
-    "smoke_tests_passing_locally": "78/78 on three offline files (backtest_audit=52, jobs=16, compute=10); smoke_sectors NOT yet re-run (212 expected)",
-    "smoke_tests_expected_total_after_sectors_run": "290/290"
+    "session_ending_version": "0.7.14",
+    "deployed_version_verified": "0.7.13",
+    "deployment_status_v0_7_14": "code complete, NOT yet deployed",
+    "timestamp_iso": "2026-04-26T15:30:00Z",
+    "smoke_tests_passing_locally": "90/90 on three offline files (backtest_audit=64, jobs=16, compute=10); smoke_sectors NOT yet re-run (212 expected)",
+    "smoke_tests_expected_total_after_sectors_run": "302/302",
+    "additional_direct_verification": "Eight-case direct verification script (production failure replays + edge cases) all pass — see briefing for details"
   },
-  "deployed_module_hashes_v0_7_13": {
-    "backtest.py": "3060763ad24679f4fb8795a4778607f93b62f95bc99ea0e3bb27b56b14035822",
+  "deployed_module_hashes_v0_7_14": {
+    "backtest.py": "e55262b4713c02f11a19628be2eaa3e74b0aacbe67db3aaa18d49f5ee598a6f2",
     "feature_computer.py": "bf502226a72794a89a672b1945f853c97bb37b15f7c9f26ad6ae422c9245d286",
     "api.py": "d4da08bd7cde44ba15f3ec41d7bf766a9463e0c9094e376d9ed948f559fdcd86",
     "storage.py": "518419943186470bc916aec016884acec86fc3eeb5daebc52e4d89e7e7fbaba7",
     "backtest_audit.py": "0fa3d887951873cc7f91275ac897de5f3bd014b4dfb9ff45715f1df356f2592b",
     "jobs.py": "ddc29f8ceba0f590c6bed4bdb4e8bac8f44657f34bd41175572692df732176b2",
-    "__init__.py": "50111bf9e10cbaf3239d6a64e5976748b5f8148baee41177bc50956a5108d0a2",
-    "config.py": "0dce6beb13c0de96f2981cbc00074a737b858da29a4fe3738cbb53043181deac"
+    "__init__.py": "a5a319fbaad5863f11cd38f2284c9ff38a302e943f75df203bad088672ccca89",
+    "config.py": "29d96bc7f9bd9ec481f3e8096ed833fd20db69cfc5b9ad64137801b7d433777c"
   },
-  "modules_changed_in_v0_7_13": [
-    "backtest.py (main-loop and fallback TIME-exit invariants now use effective_entry-based gross to match the basis tp_price/sl_price are derived from)",
-    "__init__.py (version bump to 0.7.13)",
-    "config.py (APP_VERSION bump to 0.7.13)"
+  "modules_changed_in_v0_7_14": [
+    "backtest.py (removed unsound main-loop gross-based TIME-exit invariant; added entry-time-in-regular-session check at top of _simulate_trade)",
+    "__init__.py (version bump to 0.7.14)",
+    "config.py (APP_VERSION bump to 0.7.14)"
   ],
-  "invariant_arithmetic_bug_root_cause": {
-    "location": "tech_collector/backtest.py::_simulate_trade — main-loop and fallback TIME-exit invariants",
-    "bug": "Invariant compared gross_bps (computed from raw entry_price) against tp_level/sl_level, but the engine's TP/SL bar checks fire against tp_price/sl_price which are derived from effective_entry (= entry_price * (1 + slip*split/1e4)). The two scales differ by the entry-slippage offset (slippage_bps * entry_slippage_split). Result: legitimate timestop exits with raw gross slightly above tp_level but below the actual tp_price (so TP correctly didn't fire) falsely triggered the invariant.",
-    "production_failure": {
-      "version": "0.7.12",
-      "context": "First HOLDOUT attempt for the discovery-restart Rule 1",
-      "trade": "2026-01-05, IT sector, entry 13:30 ET (UTC 18:30), entry_price=186.77, timestop_open=187.74 at 15:50 ET",
-      "math": "effective_entry=186.91, tp_price=187.85, timestop_open=187.74 < tp_price → TP correctly didn't fire. raw_gross=51.94 bps, eff_gross=44.4 bps. v0.7.12 invariant tol=1 over tp_level=50 → 51.94 > 51 → raised. eff_gross 44.4 < tp_level 50 → would not have raised.",
-      "interpretation": "Engine correctly chose to raise rather than write a possibly-contaminated trade. The invariant was simply wrong."
+  "invariant_redesign_root_cause": {
+    "category": "Design defect, not arithmetic defect",
+    "summary": "The v0.7.12 main-loop TIME-exit invariant claimed gross at timestop must be in [-sl_level, +tp_level]. This claim is false: legitimate timestop exits CAN have gross outside this range when the bar JUST BEFORE timestop has high < tp_price (so TP correctly didn't fire) but the timestop bar's open is above tp_price due to an inter-bar gap. The engine fires timestop on the timestop bar even if TP would otherwise hit (per the documented 'Check BEFORE processing TP/SL' design), so this is correct behavior — gross can legitimately exceed tp_level via gap.",
+    "production_failure_v0_7_12": {
+      "trade": "2026-01-05, IT, entry 13:30 ET at 186.77",
+      "details": "effective_entry=186.91, tp_price=187.85, timestop_open=187.74 (BELOW tp_price). raw_gross=51.94 bps; eff_gross=44.4 bps.",
+      "interpretation": "Legitimate near-TP timestop. Raw-gross invariant fired due to entry-slippage offset confusion."
     },
-    "fixed_in": "v0.7.13",
-    "fix_summary": "Both the main-loop TIME-exit invariant and the fallback-path TIME-exit invariant now compute gross_eff_bps = (bar_price - effective_entry) / effective_entry * 10000 and compare to [-sl_level, +tp_level] (with 1 bp tolerance). Same basis as the bar-vs-tp_price/sl_price checks. Phantom detection capability preserved — large negative gross from AH-bar entries (e.g., -800 bps) still raises.",
-    "regression_tests": [
-      "tests/smoke_backtest_audit.py::test_v0713_main_loop_TIME_invariant_allows_legit_above_TP_with_slip",
-      "tests/smoke_backtest_audit.py::test_v0713_main_loop_TIME_invariant_still_catches_phantom"
+    "production_failure_v0_7_13": {
+      "trade": "2026-03-05, IT, entry 13:30 ET at 280.75",
+      "details": "effective_entry=280.96, tp_price=282.37, timestop_open=282.51 (ABOVE tp_price). raw_gross=62.69 bps; eff_gross=55.15 bps.",
+      "interpretation": "Legitimate gap-up-through-TP at timestop. Even effective-gross invariant fires because gap allowed timestop_open to exceed tp_price without any prior bar's high crossing tp_price."
+    },
+    "fixed_in": "v0.7.14",
+    "fix_summary": "Removed gross-based main-loop invariant entirely (cannot be made sound). Added entry-time-in-regular-session check at top of _simulate_trade — directly checks the actual phantom signature (entry bar in AH 16:00-23:59 or pre-market <09:30) rather than a downstream proxy. Fallback-path invariant retained (sound by construction).",
+    "regression_tests_v0_7_14": [
+      "tests/smoke_backtest_audit.py::test_v0714_legit_timestop_above_eff_TP_via_gap_does_not_raise",
+      "tests/smoke_backtest_audit.py::test_v0714_entry_time_invariant_fires_on_AH_entry",
+      "tests/smoke_backtest_audit.py::test_v0714_entry_time_invariant_passes_for_regular_session"
+    ],
+    "additional_direct_verification_cases": [
+      "v0.7.12 prod failure replay (entry 186.77, timestop_open 187.74) → no raise, exit_reason=TIME ✓",
+      "v0.7.13 prod failure replay (entry 280.75, timestop_open 282.51) → no raise, exit_reason=TIME ✓",
+      "AH-bar phantom (entry at ET 19:00) → raises with entry-time message ✓",
+      "Symmetric gap-DOWN-through-SL at timestop → no raise ✓",
+      "Pre-market entry (08:00 ET) → raises ✓",
+      "09:30 ET boundary → passes ✓",
+      "15:59 ET boundary → passes ✓",
+      "16:00 ET boundary → raises ✓"
     ]
   },
   "diagnostic_endpoints": {
     "GET /source-version": {
-      "description": "Public, no auth. Returns SHA256 hash and file path for backtest, feature_computer, api, storage, backtest_audit. Compare to deployed_module_hashes_v0_7_13.",
+      "description": "Public, no auth. Returns SHA256 hash and file path for backtest, feature_computer, api, storage, backtest_audit. Compare to deployed_module_hashes_v0_7_14.",
       "added_in": "v0.7.9"
     },
     "GET /backtest/engine-selftest": {
@@ -54,58 +69,35 @@
     }
   },
   "feature_discovery_restart_state": {
-    "status": "TRAIN feature scan + TEST rule selection complete; HOLDOUT pending v0.7.13 deploy",
-    "methodology": {
-      "TRAIN": {"date_range": "2024-04-22 → 2025-04-22", "purpose": "univariate feature scan (per-scan-time, quintile-stratified); rules built here"},
-      "TEST":  {"date_range": "2025-05-01 → 2025-10-31", "purpose": "rule selection by target_peak_50bps lift"},
-      "HOLDOUT": {"date_range": "2025-11-03 → 2026-04-17", "purpose": "single final evaluation; no iteration after"}
-    },
-    "key_findings_during_train_scan": [
-      "sector_relative_strength is leaky (schema explicitly flagged so; rs_leakfree shows no edge — confirms)",
-      "target_peak_50bps is mostly a volatility/feasibility metric not a directional one",
-      "Top monotone features: atr_reach (low=good), realized_vol_so_far (high), range_tightness_30m (high), bars_in_range_20bps (low) — all measure 'is the stock active'",
-      "Genuinely directional features are weak: momentum (median +0.08 spread), mom_vs_spy (+0.06)",
-      "Mean-reversion direction: dist_to_20d_high_bps (high = oversold = bounces) shows +0.26 spread",
-      "Highly correlated feature pairs flagged so we don't pick redundant predicates"
+    "status": "TRAIN feature scan + TEST rule selection complete; HOLDOUT pending v0.7.14 deploy (third attempt)",
+    "previous_holdout_attempts": [
+      {"version": "0.7.12", "outcome": "AssertionError on first trade where timestop_open was just above raw TP"},
+      {"version": "0.7.13", "outcome": "AssertionError on a different trade where timestop_open gapped above tp_price"}
     ],
-    "candidate_rules_built": {
-      "Rule_1_Continuation": {
-        "predicates": [
-          {"feature": "atr_reach", "op": "<", "value": 12.52, "rationale": "TRAIN Q2 boundary — stock has room to extend"},
-          {"feature": "momentum", "op": ">", "value": 0, "rationale": "stock currently moving up"}
-        ],
-        "TRAIN_lift": 0.2280,
-        "TRAIN_n_signals": 15076,
-        "TEST_lift": 0.2252,
-        "TEST_n_signals": 7119,
-        "TRAIN_to_TEST_degradation": -0.0028
-      },
-      "Rule_2_MeanReversion": {
-        "predicates": [
-          {"feature": "realized_vol_so_far", "op": ">", "value": 0.0013, "rationale": "TRAIN Q3 boundary — stock is active"},
-          {"feature": "dist_to_20d_high_bps", "op": ">", "value": 744, "rationale": "TRAIN Q3 boundary — well below 20d high"}
-        ],
-        "TRAIN_lift": 0.2147,
-        "TRAIN_n_signals": 17313,
-        "TEST_lift": 0.2010,
-        "TEST_n_signals": 4930,
-        "TRAIN_to_TEST_degradation": -0.0137
-      }
-    },
-    "test_decision": "Rule 1 — Continuation wins (higher TEST lift; pre-commitment honored: pick by lift, n_signals >= 1000)",
-    "test_decision_locked_at": "before any HOLDOUT data was seen"
+    "candidate_rule_locked": {
+      "id": "step6-holdout-r1-continuation",
+      "predicates": [
+        {"feature": "atr_reach", "op": "<", "value": 12.52},
+        {"feature": "momentum", "op": ">", "value": 0}
+      ],
+      "TRAIN_lift": 0.2280,
+      "TRAIN_n_signals": 15076,
+      "TEST_lift": 0.2252,
+      "TEST_n_signals": 7119,
+      "selection_methodology": "TRAIN-only feature scan, candidates frozen at quintile boundaries before TEST evaluation, pre-committed pick by higher TEST lift with n>=1000 minimum"
+    }
   },
   "next_action_immediate": {
-    "step": "Deploy v0.7.13, verify hashes, run HOLDOUT for Rule 1",
+    "step": "Deploy v0.7.14, verify hashes, run HOLDOUT for Rule 1",
     "pre_deploy_checklist": [
       "python3 -m tests.smoke_sectors → expect 212/212",
-      "python3 -m tests.smoke_backtest_audit → expect 52/52",
+      "python3 -m tests.smoke_backtest_audit → expect 64/64",
       "python3 -m tests.smoke_compute → expect 10/10",
       "python3 -m tests.smoke_jobs → expect 16/16"
     ],
     "post_deploy_verification": [
-      "GET /info → version == 0.7.13",
-      "GET /source-version → backtest.py/__init__.py/config.py hashes match deployed_module_hashes_v0_7_13 (api.py and the rest unchanged from v0.7.12)",
+      "GET /info → version == 0.7.14",
+      "GET /source-version → backtest.py/__init__.py/config.py hashes match deployed_module_hashes_v0_7_14",
       "GET /backtest/engine-selftest → all_pass: true"
     ],
     "rule_json": {
@@ -128,8 +120,8 @@
       "end_date": "2026-04-17"
     },
     "conditional_exits": [],
-    "expected_n_trades": "4500-6000 (scaled from TRAIN/TEST density)",
-    "absolute_requirement": "Run must complete without AssertionError. If it raises, that's a new bug in v0.7.13 — investigate before reading P&L."
+    "expected_n_trades": "4500-6000",
+    "absolute_requirement": "Run must complete without AssertionError. If it raises, that's a new bug not anticipated by v0.7.14 — investigate before reading P&L."
   },
   "holdout_success_criteria_locked": {
     "pass": "size-weighted net P&L > 0 AND mean per-trade > +0.5 bps AND max DD < |total net|",
@@ -140,33 +132,35 @@
   "validation_checklist_for_holdout_csv": [
     "exit_time_et: every value in 09:30-15:59 ET. Any 19:xx → STOP.",
     "minutes_held: TIME exits > 0, max ~320. Zero-min TIME = phantom; OK only for same-bar TPs.",
-    "gross_return_bps: in [-100, +60] (TP=50/SL=100 with slip → ~max +57.5, min ~-92.5).",
+    "gross_return_bps: typically in [-100, +60] for TP=50/SL=100 + slip, BUT may exceed these bounds for legitimate gap-through-TP/SL timestops in v0.7.14 — this is now expected behaviour, not a phantom signature.",
     "NO_DATA count: small (single digits expected for HOLDOUT range).",
-    "Run completed without AssertionError (the v0.7.13 fix delivered)."
+    "Run completed without AssertionError (the v0.7.14 fix delivered)."
   ],
   "rob_working_style": {
     "tone": "Direct, evidence-driven, low patience for repeated mistakes",
     "explicit_directives_this_session": [
       "Never take the easy option — only ever the option that has the highest likelihood of achieving a successful outcome",
+      "Fix it and test it properly before providing another zip — we don't have time to waste",
       "Step-by-step instructions when asked",
       "Render-only deployment, no shell access"
     ],
     "exhausted_patience_for": [
       "Trial and error",
       "New theories without verification",
+      "Insufficiently-tested fixes (the v0.7.13 ship-and-fail cycle)",
       "Re-explanation of context he already knows"
     ]
   },
   "open_backlog": [
     {"priority": 1, "item": "Pre-deploy: run smoke_sectors locally", "status": "ready"},
-    {"priority": 2, "item": "Deploy v0.7.13 to Render", "status": "blocked-on-1"},
+    {"priority": 2, "item": "Deploy v0.7.14 to Render", "status": "blocked-on-1"},
     {"priority": 3, "item": "Post-deploy hash verification", "status": "blocked-on-2"},
-    {"priority": 4, "item": "Run HOLDOUT for Rule 1 on v0.7.13", "status": "blocked-on-3"},
+    {"priority": 4, "item": "Run HOLDOUT for Rule 1 on v0.7.14 (third attempt)", "status": "blocked-on-3"},
     {"priority": 5, "item": "Apply locked HOLDOUT criteria; pass/fail decision", "status": "blocked-on-4"},
     {"priority": 6, "item": "(if pass) Position-sizing & concurrency analysis on Rule 1's HOLDOUT trades", "status": "deferred"},
     {"priority": 7, "item": "(if fail) Restart Step 3 with interaction features or directional target", "status": "deferred"},
-    {"priority": 8, "item": "Audit infrastructure (_simulate_trade_reference) has same arithmetic bug — fix in future hardening pass", "status": "deferred"},
-    {"priority": 9, "item": "Daily signal cap (April 7 2025 = 36 simultaneous on clean data, manageable)", "status": "deferred"},
+    {"priority": 8, "item": "Audit infra (_make_time_exit) has same unsound gross-based invariant — apply v0.7.14-style fix in future hardening pass", "status": "deferred"},
+    {"priority": 9, "item": "Daily signal cap", "status": "deferred"},
     {"priority": 10, "item": "UI version display", "status": "deferred"}
   ]
 }

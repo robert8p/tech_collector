@@ -1049,6 +1049,135 @@ def test_v0713_main_loop_TIME_invariant_still_catches_phantom():
            raised, "phantom case unexpectedly slipped through after fix")
 
 
+def test_v0714_legit_timestop_above_eff_TP_via_gap_does_not_raise():
+    """v0.7.14 regression: legitimate timestop TIME exit where the timestop
+    bar's open is ABOVE the slippage-adjusted tp_price (because of an
+    inter-bar gap from prior close to timestop open) must NOT raise.
+
+    This is the exact case that fired v0.7.13's still-unsound invariant on
+    the second HOLDOUT attempt:
+      entry 2026-03-05 13:30 ET, entry_price=280.75
+      effective_entry = 280.75 * 1.00075 = 280.9606
+      tp_price = 280.9606 * 1.005 = 282.3654
+      timestop_open at 15:50 ET = 282.51 > tp_price
+      raw gross at timestop = +62.69 bps (above tp_level=50)
+      eff gross at timestop = +55.15 bps (still above tp_level=50)
+    The trade is legitimate: prior bar's close was 282.30 (below tp_price),
+    so TP correctly did NOT fire on any prior bar. The next bar gapped up
+    on the open to 282.51, the engine fires timestop on this bar (per the
+    "Check BEFORE processing TP/SL" design), and exits at the bar's open.
+    Both v0.7.12 (raw-gross basis) and v0.7.13 (eff-gross basis) wrongly
+    raised; v0.7.14 removes the gross-based invariant entirely from the
+    main-loop path and replaces it with an entry-time-in-session check.
+    """
+    from tech_collector import backtest as _bt
+    bars = []
+    # Entry bar at 13:30 ET (winter EST = UTC 18:30)
+    bars.append(_bar("2026-03-05T18:30:00Z", 280.75, 280.85, 280.65, 280.80))
+    # Walk through afternoon. Crucially, every bar's HIGH stays below
+    # tp_price (282.37). Last bar before timestop closes at 282.30.
+    walk_bars = [
+        ("18:31", 280.80, 281.00, 280.75, 280.95),
+        ("19:00", 280.95, 281.20, 280.85, 281.10),
+        ("19:30", 281.10, 281.50, 281.00, 281.40),
+        ("20:00", 281.40, 281.80, 281.30, 281.70),
+        ("20:30", 281.70, 282.10, 281.65, 282.00),
+        ("20:48", 282.00, 282.30, 281.95, 282.30),  # last bar before timestop
+        # Note: high=282.30 < tp_price=282.37 → TP correctly does not fire
+    ]
+    for hm, o, h, lo, c in walk_bars:
+        bars.append(_bar(f"2026-03-05T{hm}:00Z", o, h, lo, c))
+    # Timestop bar at 15:50 ET (UTC 20:50) — opens at 282.51 (ABOVE tp_price)
+    # due to a small inter-bar gap up. This is the legit case that must NOT
+    # raise the invariant.
+    bars.append(_bar("2026-03-05T20:50:00Z", 282.51, 282.60, 282.45, 282.50))
+
+    result = _bt._simulate_trade(
+        bars=bars, entry_ts_utc="2026-03-05T18:30:00Z",
+        entry_price=280.75, tp_level=50.0, sl_level=100.0,
+        timestop_et_hhmm="15:50", slippage_bps=15.0, entry_slippage_split=0.5,
+    )
+    _check("v0714: gap-up-through-TP at timestop bar exits as TIME (not raise)",
+           result["exit_reason"] == "TIME",
+           f"got reason={result['exit_reason']!r}")
+    _check("v0714: gap-up-through-TP exit_time is 15:50",
+           result["exit_time_et"] == "15:50",
+           f"got time={result['exit_time_et']!r}")
+    # Raw gross should be ~62.69 bps as in the production trace
+    _check("v0714: gap-up-through-TP raw gross ~62 bps (above tp_level)",
+           60 < result["gross_return_bps"] < 65,
+           f"got gross={result['gross_return_bps']:.2f}")
+
+
+def test_v0714_entry_time_invariant_fires_on_AH_entry():
+    """v0.7.14 regression: the new entry-time-in-session check fires on
+    after-hours entries (replaces the v0.7.12/v0.7.13 gross-based
+    invariant for phantom detection — same defense-in-depth, more direct
+    check, no false positives on legitimate gross excursions).
+    """
+    from tech_collector import backtest as _bt
+    bars = [
+        _bar("2024-11-15T00:00:00Z", 92.0, 92.5, 91.5, 92.0),  # ET 19:00 winter
+        _bar("2024-11-15T00:01:00Z", 92.0, 92.1, 91.9, 92.0),
+    ]
+    raised = False
+    msg = ""
+    try:
+        _bt._simulate_trade(
+            bars=bars, entry_ts_utc="2024-11-15T00:00:00Z",
+            entry_price=100.0, tp_level=75.0, sl_level=100.0,
+            timestop_et_hhmm="15:50", slippage_bps=15.0, entry_slippage_split=0.5,
+        )
+    except AssertionError as e:
+        raised = True
+        msg = str(e)
+    _check("v0714: AH entry raises entry-time invariant",
+           raised, "AssertionError was NOT raised on AH entry")
+    if raised:
+        _check("v0714: error message identifies entry-time as the cause",
+               "Entry-time invariant" in msg or "outside regular ET trading session" in msg,
+               f"unexpected error message: {msg[:200]}")
+
+
+def test_v0714_entry_time_invariant_passes_for_regular_session():
+    """v0.7.14 sanity: regular-session entries (09:30-15:59 ET) at all the
+    standard scan times pass the entry-time check without raising.
+    """
+    from tech_collector import backtest as _bt
+    # Test entries at each scan time (winter EST = UTC-5)
+    entries = [
+        ("2026-02-03T14:30:00Z", "09:30 ET"),
+        ("2026-02-03T15:30:00Z", "10:30 ET"),
+        ("2026-02-03T16:30:00Z", "11:30 ET"),
+        ("2026-02-03T17:30:00Z", "12:30 ET"),
+        ("2026-02-03T18:30:00Z", "13:30 ET"),
+        ("2026-02-03T19:30:00Z", "14:30 ET"),
+        # Edge case: 15:59 ET (still session)
+        ("2026-02-03T20:59:00Z", "15:59 ET"),
+    ]
+    for ts, et_label in entries:
+        # Build minimal bars after entry — just one bar at the entry time
+        # walking flat. No timestop (disabled), so it'll exhaust bars and
+        # hit the fallback path (which is sound).
+        bars = [
+            {"timestamp_utc": ts, "open": 100.0, "high": 100.05,
+             "low": 99.95, "close": 100.0, "volume": 1000},
+        ]
+        try:
+            result = _bt._simulate_trade(
+                bars=bars, entry_ts_utc=ts,
+                entry_price=100.0, tp_level=50.0, sl_level=100.0,
+                timestop_et_hhmm=None, slippage_bps=15.0,
+                entry_slippage_split=0.5,
+            )
+            _check(f"v0714: regular-session entry {et_label} passes",
+                   result["exit_reason"] in {"TIME", "TP", "SL", "NO_DATA"},
+                   f"got {result['exit_reason']!r}")
+        except AssertionError as e:
+            _check(f"v0714: regular-session entry {et_label} should NOT raise",
+                   False, f"raised: {str(e)[:100]}")
+
+
 def main() -> int:
     print("SMOKE: backtest_audit + _simulate_trade fix")
     print("=" * 60)
@@ -1085,6 +1214,10 @@ def main() -> int:
         # v0.7.13
         test_v0713_main_loop_TIME_invariant_allows_legit_above_TP_with_slip,
         test_v0713_main_loop_TIME_invariant_still_catches_phantom,
+        # v0.7.14
+        test_v0714_legit_timestop_above_eff_TP_via_gap_does_not_raise,
+        test_v0714_entry_time_invariant_fires_on_AH_entry,
+        test_v0714_entry_time_invariant_passes_for_regular_session,
     ]
     for t in tests:
         try:

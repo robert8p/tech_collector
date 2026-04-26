@@ -200,6 +200,35 @@ def _simulate_trade(
     if entry_dt.tzinfo is None:
         entry_dt = entry_dt.replace(tzinfo=timezone.utc)
 
+    # v0.7.14: entry-time-in-regular-session invariant. This is the correct
+    # defense-in-depth against the AH-bar phantom case (originally targeted by
+    # the v0.7.12 main-loop gross-based invariant, which had to be removed in
+    # v0.7.14 — see comment block where the timestop exit fires).
+    #
+    # The phantom signature is: _find_scan_bar_ts (or any future caller) hands
+    # _simulate_trade an entry_ts_utc whose ET time is in after-hours (>= 16:00
+    # ET) or pre-market (< 09:30 ET). The simulator then anchors on that AH
+    # bar and produces gross values driven by overnight gaps. _find_scan_bar_ts
+    # has had a regular-session guard since v0.7.12, so this invariant exists
+    # solely to catch any future regression at the bar-selection layer.
+    #
+    # This check is on entry_ts ONLY — not on bar prices, gross, or any
+    # downstream outcome. That's the key change from v0.7.12/v0.7.13: we
+    # check the actual structural condition (entry was AH) rather than a
+    # downstream proxy (gross was large), because the gross-based proxy has
+    # legitimate-case false positives we cannot eliminate without making the
+    # invariant useless.
+    _entry_et = _bar_ts_to_et(entry_dt)
+    if (_entry_et.hour < 9 or _entry_et.hour >= 16
+            or (_entry_et.hour == 9 and _entry_et.minute < 30)):
+        raise AssertionError(
+            f"Entry-time invariant violated: entry_ts={entry_ts_utc} "
+            f"resolves to {_entry_et.strftime('%Y-%m-%d %H:%M ET')}, which "
+            f"is outside regular ET trading session 09:30-15:59. "
+            f"_find_scan_bar_ts session guard should have prevented this. "
+            f"Caller passed entry_ts={entry_ts_utc}, entry_price={entry_price}."
+        )
+
     # Convert timestop to a UTC datetime on the same day as entry
     # (SPY session close is 20:00 UTC in summer, 21:00 UTC in winter.)
     # We just check the ET portion of each bar's timestamp.
@@ -247,51 +276,35 @@ def _simulate_trade(
             exit_price = bar["open"] * slip_exit_mult
             gross_bps = (bar["open"] - entry_price) / entry_price * 10_000
             net_bps = (exit_price - effective_entry) / effective_entry * 10_000
-            # v0.7.13: invariant check on the main-loop TIME exit (parity
-            # with the fallback-path invariant). A timestop TIME exit fires
-            # because the trade ran out of session time without hitting TP
-            # or SL. The bar-vs-level checks (`bar["high"] >= tp_price`,
-            # `bar["low"] <= sl_price`) are evaluated against `tp_price` and
-            # `sl_price`, both of which are derived from `effective_entry`
-            # (post entry-side slippage). The invariant must therefore use
-            # the SAME basis: a timestop bar's open expressed as bps from
-            # `effective_entry` must lie within [-sl_level, +tp_level] with
-            # a 1 bp tolerance.
+            # v0.7.14: the v0.7.12-introduced gross-based invariant on this
+            # path was REMOVED. It was unsound: it claimed timestop TIME
+            # exits must have gross within [-sl_level, +tp_level] (later
+            # corrected to use effective_entry in v0.7.13), but legitimate
+            # timestop exits CAN have gross outside that range when there
+            # is an inter-bar gap immediately preceding the timestop bar
+            # (auctions, halts, news pops). In that case the bar JUST
+            # BEFORE timestop had high < tp_price (so TP correctly didn't
+            # fire) but the timestop bar's open is ABOVE tp_price due to
+            # the gap. The engine intentionally exits at TIME (not TP) on
+            # the timestop bar — see the docstring at the top of this
+            # function and the comment above this block — so the gross
+            # CAN exceed tp_level legitimately.
             #
-            # v0.7.12 incorrectly compared raw `gross_bps` (measured from
-            # `entry_price`, not `effective_entry`) to `tp_level` directly.
-            # Because `effective_entry = entry_price * (1 + slip*split/1e4)`,
-            # raw gross sits offset from effective gross by the entry-side
-            # slippage in bps (e.g., 7.5 bps for slip=15, split=0.5). That
-            # offset caused legitimate timestop exits at price slightly
-            # above TP — but below the actual `tp_price` so TP correctly
-            # didn't fire — to falsely trigger the invariant.
+            # The original purpose of the v0.7.12 invariant was defense-in-
+            # depth against AH-bar entries leaking past _find_scan_bar_ts.
+            # That defense is now provided by the entry-time-in-session
+            # check at the top of this function (v0.7.14), which targets
+            # the actual phantom condition rather than a downstream proxy.
             #
-            # Worked example that exposed the bug (HOLDOUT v0.7.12 attempt):
-            #   entry_price=186.77, slip=15, split=0.5
-            #   effective_entry = 186.91, tp_price = 187.85 (50 bps above
-            #     effective_entry)
-            #   timestop bar open = 187.74 < tp_price → TP correctly didn't
-            #     fire in any prior bar
-            #   gross_bps_raw = +51.94 bps (just above tp_level=50)
-            #   gross_bps_eff = +44.4 bps (correctly below tp_level=50)
-            # The v0.7.13 effective-entry-based invariant lets this through
-            # as a legitimate TIME exit.
-            gross_eff_bps = (bar["open"] - effective_entry) / effective_entry * 10_000
-            tol = 1.0
-            if gross_eff_bps > tp_level + tol or gross_eff_bps < -sl_level - tol:
-                raise AssertionError(
-                    f"TIME exit (main-loop) invariant violated: "
-                    f"gross_eff_bps={gross_eff_bps:.2f} outside "
-                    f"[-{sl_level}, +{tp_level}] (gross_bps_raw={gross_bps:.2f}). "
-                    f"entry_ts={entry_ts_utc}, entry_price={entry_price}, "
-                    f"effective_entry={effective_entry:.4f}, "
-                    f"timestop_bar_ts={bar.get('timestamp_utc')}, "
-                    f"timestop_open={bar['open']:.4f}, "
-                    f"et_hh:et_mm={et_hh:02d}:{et_mm:02d}. "
-                    f"Likely cause: entry bar was after-hours; check "
-                    f"_find_scan_bar_ts session guard."
-                )
+            # Production failure that exposed v0.7.13's still-unsound
+            # invariant: 2026-03-05 IT, entry 13:30 ET (regular session)
+            # at 280.75, timestop_open 282.51, tp_price 282.37. The gap
+            # from prior bar's close (~282.30) to timestop bar's open
+            # (282.51) put the timestop_open above tp_price even though
+            # no prior bar's high reached tp_price. That trade is a
+            # legitimate TIME exit with raw gross +62.7 bps and effective
+            # gross +55.2 bps — both above tp_level=50, but neither is a
+            # phantom signature.
             return {
                 "exit_price": exit_price,
                 "exit_time_et": f"{et_hh:02d}:{et_mm:02d}",

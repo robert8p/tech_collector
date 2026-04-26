@@ -1,34 +1,27 @@
-# Tech Collector — Handoff Briefing (v0.7.13, post–invariant-arithmetic-fix)
+# Tech Collector — Handoff Briefing (v0.7.14, post-invariant-redesign)
 
 **For:** the next Claude chat continuing this work with Rob
-**Last session:** Mid-flow on a feature-discovery HOLDOUT analysis (a deliberate restart from scratch). Rule 1 (Continuation: `atr_reach < 12.52` AND `momentum > 0`) was selected on TRAIN/TEST and queued for HOLDOUT evaluation. The v0.7.12 backtest engine raised a false-positive AssertionError on the first HOLDOUT attempt due to an arithmetic bug in the v0.7.12-added TIME-exit invariant. v0.7.13 fixes the arithmetic. Code is complete and 78/78 verified locally on the three offline smoke files; deployment + sector smoke verification + HOLDOUT re-run is the next step.
-**Critical state:** v0.7.13 is NOT yet deployed. The HOLDOUT result for Rule 1 is unknown — the previous attempt aborted with an invariant error, no contaminated data was written.
+**Last session:** Mid-flow on a feature-discovery HOLDOUT analysis. v0.7.12 added a gross-based TIME-exit invariant that was **fundamentally unsound** — fired false-positives on legitimate trades. v0.7.13 attempted an arithmetic fix that addressed one false-positive class but missed the structural one (gap-through-TP at the timestop bar). **v0.7.14 removes the gross-based main-loop invariant entirely and replaces it with an entry-time-in-regular-session check** at the top of `_simulate_trade`. The check targets the actual phantom signature directly (entry bar in AH) rather than a downstream proxy (gross outside [-SL, +TP]). The HOLDOUT for Rule 1 has hit invariant-raises on two separate v0.7.12 / v0.7.13 attempts and not yet completed.
+**Critical state:** v0.7.14 is NOT yet deployed. Code complete with 90/90 verified locally on three offline smoke files (smoke_sectors needs Rob's machine). HOLDOUT pending.
 
 ---
 
 ## What you absolutely must read first
 
-1. **The v0.7.12 invariant had an arithmetic bug.** It compared `gross_bps` (computed from raw `entry_price`) against `tp_level` and `-sl_level`, but the engine's TP/SL bar checks use `effective_entry` (post entry-side slippage). The two scales differ by the entry-slippage offset (`slippage_bps × entry_slippage_split`, e.g., 7.5 bps for slip=15, split=0.5). Result: legitimate timestop exits with raw gross slightly above `tp_level` but below the actual `tp_price` (not enough to fire TP) falsely triggered the invariant.
+1. **The v0.7.12 main-loop TIME-exit invariant was unsound, not just arithmetically off.** It claimed timestop TIME exits must have gross within `[-sl_level, +tp_level]`. That claim is FALSE: legitimate timestop exits CAN have gross outside this range when an inter-bar gap immediately precedes the timestop bar (auctions, halts, news pops, lunch slowdowns). The bar JUST BEFORE timestop has high < tp_price (so TP correctly didn't fire), but the timestop bar's open is above tp_price due to the gap. Engine's documented design is to fire timestop on the timestop bar even if TP would otherwise hit — the comment in code is `"Check BEFORE processing TP/SL so we don't award a post-timestop TP exit"`.
 
-2. **The bug was caught in production by the v0.7.12 invariant itself.** The first HOLDOUT attempt failed with:
-   ```
-   gross_bps=51.94 outside [-100.0, +50.0]. entry_ts=2026-01-05T18:30:00+00:00,
-   entry_price=186.77, timestop_bar_ts=2026-01-05T20:50:00+00:00,
-   timestop_open=187.7400, et_hh:et_mm=15:50.
-   ```
-   This trade was legitimate: 13:30 ET regular-session entry, 15:50 ET regular-session timestop, full 2h20m hold. `effective_entry = 186.91`, `tp_price = 187.85`. The 15:50 bar opened at 187.74 — below `tp_price`, so TP correctly didn't fire — but raw gross was +51.94 bps, just above the v0.7.12 invariant's threshold of `tp_level + 1` = 51 bps. **Engine did the right thing by raising rather than writing a possibly-contaminated trade. The invariant was simply wrong.**
+2. **Two production failures exposed this:**
+   - **First (v0.7.12):** entry 186.77, timestop_open 187.74, raw_gross +51.94. tp_price was 187.85 — timestop_open BELOW tp_price, but raw_gross > tp_level=50 due to entry-slippage offset. v0.7.13 "fixed" this by switching basis from raw_entry to effective_entry.
+   - **Second (v0.7.13):** entry 280.75, timestop_open 282.51, raw_gross +62.69, eff_gross +55.15. tp_price was 282.37 — timestop_open ABOVE tp_price. eff_gross > tp_level=50 — false-positive even after v0.7.13's fix. Reason: gap from prior bar's close (~282.30) to timestop bar's open (282.51) put the open above tp_price without any prior bar's high crossing tp_price.
 
-3. **Fix shipped in v0.7.13 (code complete, NOT yet deployed):** Both the main-loop and fallback TIME-exit invariants now compute gross from `effective_entry` (matching the basis the TP/SL price thresholds are derived from). This is a one-line semantic fix to each of the two invariants, with extensive comments preserving the v0.7.12 narrative. The v0.7.12 phantom-detection capability is fully preserved — the invariant still raises when an after-hours bar leaks through `_find_scan_bar_ts` (test `test_v0713_main_loop_TIME_invariant_still_catches_phantom` explicitly verifies this).
+3. **v0.7.14 fix (code complete, NOT yet deployed):**
+   - **Removed** the v0.7.12/v0.7.13 main-loop gross-based invariant entirely. It cannot be made sound.
+   - **Added** an entry-time-in-regular-session check at the top of `_simulate_trade`: if `entry_ts_utc` resolves to ET time outside 09:30-15:59, raise. This is the actual phantom signature; replaces the gross-based proxy with a direct structural check.
+   - **Kept** the fallback-path invariant (with v0.7.13's effective-entry-based math). The fallback is only reached when no bar's high reached tp_price AND no bar's low reached sl_price across the entire `parsed` list — which mathematically guarantees last_close ∈ (sl_price, tp_price), so the invariant is sound there.
 
-4. **What we're in the middle of (the actual project work):** A full feature-discovery restart, abandoning all prior placeholder rules. Brief recap:
-   - Methodology gates: TRAIN (2024-04-22 → 2025-04-22) for feature scan, TEST (2025-05-01 → 2025-10-31) for rule selection, HOLDOUT (2025-11-03 → 2026-04-17) for one and only one final evaluation. No iteration after HOLDOUT.
-   - Discovered `sector_relative_strength` is leaky (schema flagged this; `rs_leakfree` has no edge — confirms leak)
-   - Discovered `target_peak_50bps` is mostly a volatility metric not a directional one — top predictors are vol/feasibility predictors, weak directional ones (`momentum`, `mom_vs_spy`) are honest but small
-   - Built two parallel candidate rules (continuation vs mean-reversion), both with exactly 2 predicates, frozen at TRAIN quintile thresholds before peeking at TEST
-   - **Rule 1 won on TEST** by lift margin (R1: +0.2252 vs R2: +0.2010, both n>1000). R1 carries to HOLDOUT.
-   - HOLDOUT pre-committed criteria: net P&L > 0 AND mean per-trade > +0.5 bps AND max DD < |total net|. If fail → restart Step 3, do NOT tweak Rule 1.
+4. **Verification level (blunt):** I verified v0.7.14 directly against BOTH production failures plus 6 other edge cases (phantom AH entry, pre-market entry, gap-down-through-SL at timestop, session boundaries 09:30/15:59/16:00). All 8 cases give correct outcomes. 90/90 on offline smokes. The previous two zip-and-ship cycles did not catch the v0.7.13 bug because the v0.7.13 test only covered the "near-TP" case (open below tp_price), not the "gap-through-TP" case (open above tp_price). The v0.7.14 test set covers both.
 
-5. **What v0.7.13 does NOT change:** the v0.7.11 storage-layer ET-date filter, the v0.7.12 `_find_scan_bar_ts` regular-session guard, the `/raw-bars/coverage` diagnostic endpoint, all earlier engine fixes. Only the two TIME-exit invariants in `backtest.py` and version bumps are modified.
+5. **Rob's stated demand this session:** "fix it and test it properly before providing another zip. We don't have time to waste." I take this seriously. The v0.7.14 testing is more thorough than v0.7.13's was — direct production-failure replay plus 6 edge cases plus the existing smoke regression suite, all run and passing.
 
 ---
 
@@ -36,72 +29,77 @@
 
 - **"We only do things properly."** No half-measures. No hacks.
 - **"Trial and error is not acceptable."** Reason a fix through to completion locally with reproducer tests BEFORE asking him to deploy.
-- **"Never take the easy option — only ever the option that has the highest likelihood of achieving a successful outcome."** Stated explicitly this session. Critical context for any judgment call.
+- **"Never take the easy option — only ever the option that has the highest likelihood of achieving a successful outcome."** Stated this session.
+- **"PLEASE fix it and test it properly before providing another zip."** Stated this session, after the v0.7.13 false-fix. Verify EVERY claimed fix against the actual production failure data before shipping.
 - **No manual work — automate as much as possible.**
 - **Step-by-step instructions when he asks.**
-- **Blunt evidence-driven assessment.** Tell him when results are bad. Don't sugar-coat.
-- **Trust him when he says something's broken.** Investigate, don't reassure.
 - **Render-only deployment. No SSH/SQL.** Diagnostics through HTTP endpoints.
 
 ---
 
-## Current state of the deployed system
+## What's in v0.7.14 (code complete, awaiting deploy)
 
-- **Render service:** `tech-collector.onrender.com`. Reports `0.7.12` via `/info` until v0.7.13 deployed.
-- **DB:** SQLite at `/var/data/tech_collector.db`. Same shape as v0.7.12 — no schema changes.
-- **`research_rows`:** ~95k rows for IT sector, range 2024-04-22 → 2026-04-17ish. Computed pre-v0.7.13. Untouched by v0.7.13 — no recompute needed.
-- **`raw_bars`:** Same as v0.7.12 — populated for IT + SPY. Includes after-hours bars, including (symbol, date) pairs where regular-session bars are missing (handled correctly by v0.7.12 session guard).
-- **`backtest_runs`:** Pre-v0.7.13 runs include the v0.7.12 baseline (`342c5664`), 12-symbol exclusion (`9ebbe454`), 5-symbol exclusion (`3491aeb5`). All clean of phantoms but discarded for current analysis (we're doing a feature-discovery restart).
+1. **Removed unsound main-loop TIME-exit invariant** in `_simulate_trade` (backtest.py, in the timestop-fires branch around line 246-282). The block has a long comment explaining why the invariant was unsound and why the entry-time check replaces it. The TIME exit return statement is unchanged.
 
----
+2. **Added entry-time-in-regular-session check** at top of `_simulate_trade` (backtest.py, after `entry_dt` is parsed, around line 203-228). Raises with a clear message if `entry_dt` resolves to ET time outside 09:30-15:59. Direct defense-in-depth for the AH-bar phantom case.
 
-## What's in v0.7.13 (code complete, awaiting deploy)
+3. **Kept fallback-path invariant** with v0.7.13's effective-entry math (backtest.py, around line 362-395). This invariant IS sound by construction (no bar's high ≥ tp_price ⟹ last_close < tp_price; symmetric for SL).
 
-1. **Fixed main-loop TIME-exit invariant** in `_simulate_trade` (backtest.py ~lines 246-285). Now computes `gross_eff_bps = (bar.open - effective_entry) / effective_entry * 1e4` and compares to `[-sl_level, +tp_level]`. Same comparison basis as the bar-vs-`tp_price` check.
-2. **Fixed fallback TIME-exit invariant** in `_simulate_trade` (backtest.py ~lines 362-395). Same basis fix; same correctness reasoning. Documentation in code preserves the v0.7.12 narrative and explains why the bug rarely fired here in practice.
-3. **2 new regression tests** in `smoke_backtest_audit.py`:
-   - `test_v0713_main_loop_TIME_invariant_allows_legit_above_TP_with_slip` — reproduces the production failure case (entry 186.77, timestop_open 187.74, raw gross 51.94, eff gross 44.4) and asserts no raise
-   - `test_v0713_main_loop_TIME_invariant_still_catches_phantom` — re-runs the v0.7.12 phantom case (gross −800 bps) and asserts the invariant still raises
-4. **All v0.7.11 + v0.7.12 fixes preserved** — storage-layer ET-date filter, `_find_scan_bar_ts` regular-session guard, `/raw-bars/coverage` endpoint, earlier engine fixes, compute optimization, jobs system.
+4. **3 new regression tests** in `smoke_backtest_audit.py`:
+   - `test_v0714_legit_timestop_above_eff_TP_via_gap_does_not_raise` — replays the v0.7.13 production failure (entry 280.75 → timestop_open 282.51 above tp_price)
+   - `test_v0714_entry_time_invariant_fires_on_AH_entry` — phantom case still caught
+   - `test_v0714_entry_time_invariant_passes_for_regular_session` — sweeps all 6 standard scan times + 15:59 boundary
+
+5. **All v0.7.11/v0.7.12/v0.7.13 fixes preserved** — storage-layer ET-date filter, `_find_scan_bar_ts` regular-session guard, `/raw-bars/coverage` endpoint, fallback-path invariant correctness, earlier engine fixes.
 
 **Local module hashes (compare against deployed `/source-version` after deploy):**
-- `backtest.py`: `3060763ad24679f4fb8795a4778607f93b62f95bc99ea0e3bb27b56b14035822` ← changed
+- `backtest.py`: `e55262b4713c02f11a19628be2eaa3e74b0aacbe67db3aaa18d49f5ee598a6f2` ← changed
 - `feature_computer.py`: `bf502226a72794a89a672b1945f853c97bb37b15f7c9f26ad6ae422c9245d286` (unchanged)
 - `api.py`: `d4da08bd7cde44ba15f3ec41d7bf766a9463e0c9094e376d9ed948f559fdcd86` (unchanged from v0.7.12)
 - `storage.py`: `518419943186470bc916aec016884acec86fc3eeb5daebc52e4d89e7e7fbaba7` (unchanged)
 - `backtest_audit.py`: `0fa3d887951873cc7f91275ac897de5f3bd014b4dfb9ff45715f1df356f2592b` (unchanged)
 - `jobs.py`: `ddc29f8ceba0f590c6bed4bdb4e8bac8f44657f34bd41175572692df732176b2` (unchanged)
-- `__init__.py`: `50111bf9e10cbaf3239d6a64e5976748b5f8148baee41177bc50956a5108d0a2` ← changed (version)
-- `config.py`: `0dce6beb13c0de96f2981cbc00074a737b858da29a4fe3738cbb53043181deac` ← changed (version)
+- `__init__.py`: `a5a319fbaad5863f11cd38f2284c9ff38a302e943f75df203bad088672ccca89` ← changed (version)
+- `config.py`: `29d96bc7f9bd9ec481f3e8096ed833fd20db69cfc5b9ad64137801b7d433777c` ← changed (version)
 
 **Smoke totals (verified locally on three offline files; smoke_sectors needs Rob's machine):**
-- `smoke_backtest_audit`: **52/52 passed** (was 48; +4 new assertions across 2 v0.7.13 tests)
+- `smoke_backtest_audit`: **64/64 passed** (was 52; +12 new assertions across 3 v0.7.14 tests; v0.7.12/v0.7.13 tests still pass — the entry-time check raises before the old gross check would have)
 - `smoke_compute`: **10/10 passed**
 - `smoke_jobs`: **16/16 passed**
-- `smoke_sectors`: NOT yet re-run. Was 212/212 on v0.7.12; v0.7.13 changes don't touch sectors-pipeline; only version-string asserts bumped (3 places). Expect 212/212.
+- `smoke_sectors`: NOT yet re-run. Was 212/212 on prior versions. v0.7.14 changes don't touch the sectors-pipeline code path; only the hardcoded version-string check in three places was bumped.
 
-Expected total when smoke_sectors is re-run: **290/290.**
+Expected total after smoke_sectors run: **302/302**.
+
+**Direct production-failure verification beyond the smoke suite (eight cases, all pass):**
+1. v0.7.12 prod failure (entry 186.77, timestop_open 187.74) → no raise, exit_reason=TIME ✓
+2. v0.7.13 prod failure (entry 280.75, timestop_open 282.51) → no raise, exit_reason=TIME ✓
+3. AH-bar phantom (entry at ET 19:00) → raises with entry-time message ✓
+4. Symmetric gap-DOWN-through-SL at timestop → no raise, exit_reason=TIME ✓
+5. Pre-market entry (08:00 ET) → raises ✓
+6. 09:30 boundary → passes ✓
+7. 15:59 boundary → passes ✓
+8. 16:00 boundary → raises ✓
 
 ---
 
 ## Current state of work — RESUME HERE
 
-**Immediately next step:** Deploy v0.7.13, verify hashes, re-run the HOLDOUT backtest for Rule 1.
+**Immediately next step:** Deploy v0.7.14, verify hashes, re-run the HOLDOUT backtest for Rule 1 (third attempt).
 
 ### Pre-deploy checklist
 
-1. Unzip v0.7.13 locally, run `python3 -m tests.smoke_sectors` → expect 212/212.
-2. Run `python3 -m tests.smoke_backtest_audit` → expect 52/52.
+1. Unzip v0.7.14 locally, run `python3 -m tests.smoke_sectors` → expect 212/212.
+2. Run `python3 -m tests.smoke_backtest_audit` → expect 64/64.
 3. Run `python3 -m tests.smoke_compute` → expect 10/10.
 4. Run `python3 -m tests.smoke_jobs` → expect 16/16.
 
 ### Post-deploy verification
 
-1. `GET /info` → `"version": "0.7.13"`.
-2. `GET /source-version` → `backtest.py`, `__init__.py`, `config.py` hashes match the three "changed" hashes above. `api.py` hash unchanged from v0.7.12 (`d4da08bd...`).
+1. `GET /info` → `"version": "0.7.14"`.
+2. `GET /source-version` → `backtest.py`, `__init__.py`, `config.py` hashes match the three "changed" hashes above. `api.py` unchanged from v0.7.12 (`d4da08bd...`).
 3. `GET /backtest/engine-selftest` → `all_pass: true`.
 
-### HOLDOUT (a) settings — Rule 1 unchanged from prior attempt
+### HOLDOUT settings — Rule 1 unchanged
 
 Rule JSON:
 ```json
@@ -116,29 +114,28 @@ Rule JSON:
 }
 ```
 
-Form fields:
+Form fields (unchanged from v0.7.12 / v0.7.13 attempts):
 - TP `50`, SL `100`, TIMESTOP `15:50`, SLIPPAGE `15`
 - SPY REGIME FILTER: empty
 - SYMBOL EXCLUDE: empty
 - START `2025-11-01`, END `2026-04-17`
 - Conditional exits: **leave EMPTY** (clean test, no branch dispatch)
 
-Predicted ~4,500–6,000 trades. v0.7.13 should NOT raise on this run; if it does, that's a new bug in the invariant that needs investigation before any P&L is read off.
+Predicted ~4,500–6,000 trades. v0.7.14 should NOT raise on this run; if it does, that's a new bug not anticipated by the v0.7.14 test set, and we stop and investigate.
 
 ### HOLDOUT success criteria (locked, do not relitigate)
 
 - **Pass:** size-weighted net P&L > 0 AND mean per-trade > +0.5 bps AND max DD < |total net|. Move to position-sizing/concurrency analysis.
-- **Marginal pass:** net P&L > 0 but per-trade weak or DD large. Document and discuss.
-- **Fail:** net P&L ≤ 0. **Per protocol, no tweaking Rule 1.** Restart Step 3 with different methodology — likely interaction features (`momentum × atr_reach` joint quintiles), or a directional target (`return_at_scan_plus_60m > 0` instead of peak-tagging).
+- **Marginal pass:** net P&L > 0 but per-trade weak or DD large. Discuss.
+- **Fail:** net P&L ≤ 0. **Per protocol, no tweaking Rule 1.** Restart Step 3 with different methodology (interaction features or directional target like `return_at_scan_plus_60m > 0`).
 
 ### After HOLDOUT CSV uploads — validation checklist
 
-Same as v0.7.12 + new v0.7.13 expectation:
-1. `exit_time_et`: every value in 09:30-15:59 ET. Any 19:xx = engine still broken (STOP).
+1. `exit_time_et`: every value in 09:30-15:59 ET. Any `19:xx` = engine still broken (STOP).
 2. `minutes_held`: TIME exits > 0, max ~320. Zero-min TIMEs are phantom; OK only for same-bar TPs.
-3. `gross_return_bps`: in `[-160, +90]`. (For TP=50, SL=100, simple non-conditional: max ~+57.5, min ~-92.5.)
-4. NO_DATA count: small (single digits expected — depends on missing-bar (symbol,date) pairs in HOLDOUT range).
-5. **Run did not abort with AssertionError** (the v0.7.13 fix delivered).
+3. `gross_return_bps`: typically in `[-100, +60]` for TP=50/SL=100 with slip, but **may exceed those bounds when the timestop bar opens above tp_price or below sl_price due to inter-bar gaps** — that's a legitimate occurrence in v0.7.14, not a phantom signature. The bounds are not a hard invariant; only the entry-time check is.
+4. NO_DATA count: small (single digits expected).
+5. Run completed without AssertionError.
 
 If spot-check passes → evaluate against locked HOLDOUT criteria above. **DO NOT re-introduce branch dispatch, exclusions, or regime gates** — that's iteration. The pre-committed Rule 1 + form is the test.
 
@@ -147,51 +144,51 @@ If spot-check passes → evaluate against locked HOLDOUT criteria above. **DO NO
 ## Open / pending items (priority ordered)
 
 1. **Pre-deploy: run smoke_sectors locally (212 expected).**
-2. **Deploy v0.7.13 to Render.**
+2. **Deploy v0.7.14 to Render.**
 3. **Post-deploy hash verification.**
-4. **Run HOLDOUT for Rule 1 on v0.7.13.**
-5. **Apply locked HOLDOUT criteria to result.**
+4. **Run HOLDOUT for Rule 1 on v0.7.14.**
+5. **Apply locked HOLDOUT criteria.**
 6. (If pass) Position-sizing & concurrency analysis on Rule 1's HOLDOUT trades.
-7. (If fail) Restart Step 3 from `tech_scan_rows` data — try interaction features or a directional target. The rule selection process gets re-done from scratch on the same TRAIN/TEST/HOLDOUT split, but TEST and HOLDOUT remain held-out from feature scanning (TRAIN is the only thing we look at for discovery).
-8. (Backlog) Re-audit historical runs if Rob wants. Audit infrastructure not v0.7.13-verified — `_simulate_trade_reference` in `backtest_audit.py` has its own `_make_time_exit` invariant which uses raw gross too. **It has the same arithmetic bug.** It rarely fires because `_signal_time_to_utc_iso` doesn't search the bar list (no AH-bar-selection vulnerability), but the invariant itself is technically wrong. Worth fixing in a future hardening pass — not blocking.
-9. (Backlog) Daily signal cap (April 7 2025 = ~36 simultaneous signals on clean v0.7.12 data, much less than the contaminated-era "146" claim).
+7. (If fail) Restart Step 3 from `tech_scan_rows` data with different methodology.
+8. (Backlog) Audit infrastructure (`backtest_audit.py::_make_time_exit`) has the same unsound gross-based invariant as v0.7.12/v0.7.13 had. Should be replaced with the same entry-time-in-session approach. Audit isn't currently used in the production path; deferred.
+9. (Backlog) Daily signal cap (April 7 2025 = 36 simultaneous on clean data, manageable).
 10. (Backlog) UI version display.
 
 ---
 
 ## What NOT to do
 
-1. **Do not deploy v0.7.13 without running the offline smokes locally first** (see pre-deploy checklist).
-2. **Do not skip post-deploy hash verification.** Every deploy gets verified.
-3. **Do not iterate on Rule 1** based on HOLDOUT result. Pass/fail decision is locked. If fail, restart Step 3 — do not relax HOLDOUT criteria, do not adjust thresholds, do not add predicates.
-4. **Do not add conditional exits / branch dispatch / symbol exclusions to the HOLDOUT run** — that's the next Claude prematurely "improving" Rule 1. The simplicity of two predicates and a single TP/SL pair is intentional.
-5. **Do not reference any pre-restart findings** ("12-symbol exclusion list", "+4549 bps from baseline", "regime_ok improves H2") as truth. Those came from the placeholder rule and are not part of the current discovery process.
+1. **Do not deploy v0.7.14 without running the offline smokes locally first.**
+2. **Do not skip post-deploy hash verification.**
+3. **Do not iterate on Rule 1** based on HOLDOUT result. Pass/fail decision is locked.
+4. **Do not re-add a gross-based TIME-exit invariant on the main-loop path** — it cannot be made sound. The entry-time-in-session check is the correct phantom defense.
+5. **Do not reference any pre-restart findings** ("12-symbol exclusion list", "+4549 bps from baseline", "regime_ok improves H2") as truth.
 
 ---
 
 ## Files in the handoff zip
 
-- Source code FLAT layout matching prior versions, with the v0.7.13 changes
-- `HANDOFF_BRIEFING.md` — this document
-- `HANDOFF_DATA.json` — programmatic state (hashes, settings, locked criteria)
-- `evidence_packs/` — kept the v0.7.11 contaminated baseline CSV as documented evidence; rest unchanged
+- Source code FLAT layout matching prior versions, with v0.7.14 changes.
+- `HANDOFF_BRIEFING.md` — this document.
+- `HANDOFF_DATA.json` — programmatic state (hashes, settings, locked criteria).
+- `evidence_packs/` — kept the v0.7.11 contaminated baseline CSV plus original 3 reference packs.
 
 ---
 
 ## First message to send Rob in the new chat
 
-> Continuing from prior chat. v0.7.13 is code-complete (TIME-exit invariant arithmetic fix; main-loop and fallback both corrected; phantom detection preserved). 78/78 on offline smokes. The HOLDOUT for Rule 1 (`atr_reach < 12.52, momentum > 0`, TP=50/SL=100, no exclusions or branch dispatch) is the immediately-next step — engine should now allow legitimate near-TP timestops through. Have you deployed v0.7.13 yet? If not, run the pre-deploy smokes; if yes, post-deploy hashes + HOLDOUT.
+> Continuing from prior chat. v0.7.14 is code-complete. The v0.7.12 main-loop TIME-exit invariant was unsound (false-positives on inter-bar gaps); v0.7.13's arithmetic patch addressed one class but not the gap-through-TP class. v0.7.14 removes the gross-based main-loop invariant entirely and replaces it with an entry-time-in-regular-session check — direct defense against the actual phantom signature with no false-positives. Verified against both production failures plus 6 edge cases beyond the smoke suite. 90/90 on three offline smoke files. Have you deployed v0.7.14 yet?
 
 ---
 
 ## Working notes for next Claude
 
-- **Two TIME-exit invariants existed pre-v0.7.13. Both had the same bug; both are now fixed.** If you ever modify `_simulate_trade`, make sure both the main-loop timestop path AND the fallback path use `gross_eff_bps` for the invariant comparison. Don't regress the basis.
+- **Invariants on derived quantities are dangerous.** The gross-based invariant looked clean in isolation but missed the design intent (timestop fires before TP/SL on the timestop bar, so gap-through-TP is allowed). When adding defense-in-depth, prefer checking *structural* conditions (entry bar in session, bar list sorted, etc.) over checking *derived* outcomes (gross within bounds, P&L positive, etc.).
 
-- **The v0.7.12 invariant fired BEFORE writing contaminated data.** That's the correct fail mode for an over-tight invariant. Better than silently writing wrong P&L. Honor that pattern in any new invariants you add.
+- **The fallback-path invariant IS sound by construction.** It's reached only after a full re-scan that confirms no bar's high reached tp_price and no bar's low reached sl_price. Last close is mathematically bounded. Don't remove this one.
 
-- **The audit infrastructure (`backtest_audit.py`) was NOT modified in v0.7.13.** Its `_make_time_exit` uses raw gross too. That bug is technically present but rarely triggers (audit-side entry resolution doesn't search bars). Future hardening work, not blocking.
+- **Test against actual production failures, not just constructed cases.** The v0.7.13 zip shipped because its tests covered "near-TP timestop" but not "gap-through-TP timestop". When fixing a production failure, the test that REPRODUCES that exact failure in code should be the first thing written. The eight-case verification block in `/home/claude/v0714/test_v0714_verify.py`-style direct script (run interactively, results above) is a model — replicate this discipline for any future invariant work.
 
-- **Methodological discipline for the feature-discovery work matters more than any specific rule.** The whole point of the restart was to do this cleanly, with HOLDOUT untouched until the very end. If HOLDOUT fails for Rule 1, the next attempt MUST come from a fresh TRAIN-only feature scan — not from inspecting what didn't work in HOLDOUT.
+- **Audit infrastructure (`_make_time_exit` in `backtest_audit.py`) has the same kind of bug.** It's not in the production path so this isn't urgent, but it should be fixed in the same way (entry-time check instead of gross-based invariant) before any audit-based rerun is trusted.
 
-- **Be honest about uncertainty.** If you've fixed something, say "I think this fixes it; let's verify on production." When something works, "this is working." When something is broken, "this is broken." Don't bury bad news in qualifiers.
+- **Be honest about uncertainty.** When you've fixed something, say "I think this fixes it; let's verify on production." The v0.7.13 ship-and-fail cycle happened because I claimed correctness based on insufficient testing. Don't repeat it.

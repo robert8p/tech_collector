@@ -403,7 +403,7 @@ def phase_export_both_sectors(db_path: Path, pack_dir: Path, the_date: date) -> 
                   manifest.get("sector") == expected_sector,
                   f"manifest.sector={manifest.get('sector')}")
             check(f"{expected_sector}: manifest version is 0.7.1",
-                  manifest.get("version") == "0.7.13",
+                  manifest.get("version") == "0.7.14",
                   f"version={manifest.get('version')}")
 
 
@@ -433,7 +433,7 @@ def phase_negative_and_helpers() -> None:
 
     # Version bumped
     check("config.APP_VERSION is 0.7.1",
-          config.APP_VERSION == "0.7.13", f"version={config.APP_VERSION}")
+          config.APP_VERSION == "0.7.14", f"version={config.APP_VERSION}")
 
     # Signature check: validate.compare accepts sector kwarg
     import inspect
@@ -580,7 +580,7 @@ def phase_orchestrator_and_parquet(db_path: Path, pack_dir: Path,
               meta_d.get("sector") == "Information Technology",
               f"sector={meta_d.get('sector')}")
         check("parquet embedded metadata has version 0.7.1",
-              meta_d.get("version") == "0.7.13",
+              meta_d.get("version") == "0.7.14",
               f"version={meta_d.get('version')}")
         check("parquet embedded metadata has row_count",
               "row_count" in meta_d, f"keys={sorted(meta_d.keys())[:10]}")
