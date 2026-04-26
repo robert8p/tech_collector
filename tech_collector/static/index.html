@@ -572,6 +572,29 @@
     </div>
   </div>
 
+  <div class="row" style="gap: 12px; margin-top: 6px;">
+    <div style="flex: 1;">
+      <label title="Optional shortlist cap. Keep only top/bottom N signals per signal date after the rule fires. Blank = no cap.">max signals/day</label>
+      <input type="number" id="bt-max-signals-per-day" min="1" max="100" step="1" placeholder="blank = no cap">
+    </div>
+    <div style="flex: 1;">
+      <label title="Scan-time feature used for ranking when max signals/day is set, e.g. relative_volume, ret_vs_spy, momentum, intraday_range_position.">rank feature</label>
+      <input type="text" id="bt-rank-feature" placeholder="e.g. relative_volume">
+    </div>
+    <div style="flex: 1;">
+      <label title="desc keeps largest rank_feature values; asc keeps smallest.">rank direction</label>
+      <select id="bt-rank-direction">
+        <option value="desc">desc — largest first</option>
+        <option value="asc">asc — smallest first</option>
+      </select>
+    </div>
+    <div style="flex: 1; display: flex; align-items: center; padding-bottom: 8px;">
+      <span style="color: var(--text-faint); font-size: 11px; font-style: italic;">
+        Use for event-day rules that fire too many simultaneous signals.
+      </span>
+    </div>
+  </div>
+
   <div style="margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--border-strong); background: var(--bg);">
     <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
       <input type="checkbox" id="bt-cond-enable" style="width: auto;">
@@ -1773,6 +1796,9 @@ function _applyBacktestPreset(obj, sourceName="uploaded JSON") {
   _setSelectIfPresent("bt-filter-mode", _firstPresent(cfg, ["filter_mode", "signal_filter_mode"]));
   _setInputIfPresent("bt-entry-delay-minutes", _firstPresent(cfg, ["entry_delay_minutes", "entry_delay", "entry_delay_min"]));
   _setInputIfPresent("bt-min-exit-minutes", _firstPresent(cfg, ["min_exit_minutes", "min_exit_delay", "min_exit_delay_minutes"]));
+  _setInputIfPresent("bt-max-signals-per-day", _firstPresent(cfg, ["max_signals_per_day", "max_trades_per_day", "top_k_per_day", "top_k"]));
+  _setInputIfPresent("bt-rank-feature", _firstPresent(cfg, ["rank_feature", "rank_by", "sort_feature"]));
+  _setSelectIfPresent("bt-rank-direction", _firstPresent(cfg, ["rank_direction", "rank_order", "sort_direction"]));
   _setCheckboxIfPresent("bt-jit", _firstPresent(cfg, ["just_in_time_backfill", "jit_backfill", "jit"]));
 
   const cond = _firstPresent(cfg, ["conditional_exits", "conditional_exit_branches"]);
@@ -1780,7 +1806,7 @@ function _applyBacktestPreset(obj, sourceName="uploaded JSON") {
 
   const loadedBits = [];
   if (rule) loadedBits.push("rule " + (rule.id || "(unnamed)"));
-  const knownFields = ["tp_bps", "sl_bps", "timestop_et", "slippage_bps", "start_date", "end_date", "filter_mode", "entry_delay_minutes", "min_exit_minutes", "just_in_time_backfill"];
+  const knownFields = ["tp_bps", "sl_bps", "timestop_et", "slippage_bps", "start_date", "end_date", "filter_mode", "entry_delay_minutes", "min_exit_minutes", "max_signals_per_day", "rank_feature", "rank_direction", "just_in_time_backfill"];
   const nKnown = knownFields.filter(k => cfg[k] !== undefined).length;
   if (nKnown || cond !== undefined) loadedBits.push("settings");
   _btStatus("Loaded " + (loadedBits.join(" + ") || "JSON") + " from " + sourceName + ".", "ok");
@@ -1859,6 +1885,12 @@ async function _currentBacktestPresetObject() {
     filter_mode: document.getElementById("bt-filter-mode").value || "standard",
     entry_delay_minutes: parseInt(document.getElementById("bt-entry-delay-minutes").value || "0", 10),
     min_exit_minutes: parseInt(document.getElementById("bt-min-exit-minutes").value || "0", 10),
+    max_signals_per_day: (function() {
+      const v = document.getElementById("bt-max-signals-per-day").value;
+      return v === "" ? null : parseInt(v, 10);
+    })(),
+    rank_feature: (document.getElementById("bt-rank-feature").value.trim() || null),
+    rank_direction: document.getElementById("bt-rank-direction").value || "desc",
     just_in_time_backfill: document.getElementById("bt-jit").checked,
     delete_raw_bars_after: false,
     conditional_exits: _collectConditionalExitsFromUI(),
@@ -1932,6 +1964,12 @@ document.getElementById("bt-run").onclick = async () => {
     filter_mode: document.getElementById("bt-filter-mode").value || "standard",
     entry_delay_minutes: parseInt(document.getElementById("bt-entry-delay-minutes").value || "0", 10),
     min_exit_minutes: parseInt(document.getElementById("bt-min-exit-minutes").value || "0", 10),
+    max_signals_per_day: (function() {
+      const v = document.getElementById("bt-max-signals-per-day").value;
+      return v === "" ? null : parseInt(v, 10);
+    })(),
+    rank_feature: (document.getElementById("bt-rank-feature").value.trim() || null),
+    rank_direction: document.getElementById("bt-rank-direction").value || "desc",
     just_in_time_backfill: document.getElementById("bt-jit").checked,
     delete_raw_bars_after: false,
     conditional_exits: condExits,
@@ -1957,10 +1995,12 @@ document.getElementById("bt-run").onclick = async () => {
     if (j.filter_mode) lines.push("filter:    " + j.filter_mode);
     if (j.entry_delay_minutes !== undefined) lines.push("entry delay: " + j.entry_delay_minutes + " min");
     if (j.min_exit_minutes !== undefined) lines.push("min exit delay: " + j.min_exit_minutes + " min");
+    if (j.max_signals_per_day) lines.push("rank cap:  top " + j.max_signals_per_day + "/day by " + j.rank_feature + " (" + j.rank_direction + ")");
     if (j.symbol_exclude && j.symbol_exclude.length) lines.push("excluded:  " + j.symbol_exclude.join(","));
     lines.push("");
     lines.push("signals total:     " + j.n_signals_total);
     lines.push("skipped (regime):  " + j.n_signals_skipped_regime);
+    if (j.n_signals_skipped_rank_cap !== undefined) lines.push("skipped (rank cap): " + j.n_signals_skipped_rank_cap);
     lines.push("skipped (no_data): " + j.n_signals_no_data);
     lines.push("trades:            " + j.n_trades);
     lines.push("");

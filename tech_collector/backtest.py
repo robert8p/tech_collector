@@ -163,6 +163,15 @@ class BacktestConfig:
     # 1 = conservative opening audit: if a 09:30 signal fires, enter at the 09:31
     # raw bar open instead of assuming a fill at the 09:30 scan_price.
     entry_delay_minutes: int = 0
+    # v0.7.23: optional per-day signal cap/ranking for shortlist realism.
+    # When max_signals_per_day is set, after the rule fires and after any
+    # regime filter, keep only the top/bottom N signals per signal date using
+    # rank_feature. This is intended for event-day rules that otherwise fire
+    # on most of the sector at once. Ranking uses scan-time signal-row fields
+    # only; outcome columns must never be used here.
+    max_signals_per_day: int | None = None
+    rank_feature: str | None = None
+    rank_direction: str = "desc"  # "desc" = largest values first; "asc" = smallest first.
 
 
 # v0.7.21: diagnostic feature export for execution-aligned rule discovery.
@@ -664,6 +673,58 @@ def _ensure_raw_bars(
     return storage.get_raw_bars_for_day(conn, symbol, date)
 
 
+
+def _apply_signal_rank_cap(signals: pd.DataFrame, bt: BacktestConfig) -> tuple[pd.DataFrame, int]:
+    """v0.7.23: keep only the top/bottom N signals per signal date.
+
+    Returns (filtered_signals, n_dropped). This runs after the rule predicates
+    and optional SPY regime filter, before raw-bar simulation. It is deliberately
+    simple and transparent so the trades CSV remains a faithful record of the
+    subset actually backtested.
+
+    Guardrails:
+    - max_signals_per_day <= 0 means disabled.
+    - rank_feature accepts either raw names ("relative_volume") or exported
+      names ("sig_relative_volume") and maps to the signal DataFrame column.
+    - Missing/non-finite rank values are pushed to the back of the ranking.
+    """
+    try:
+        n = int(bt.max_signals_per_day or 0)
+    except (TypeError, ValueError):
+        n = 0
+    if n <= 0:
+        return signals, 0
+    if not bt.rank_feature:
+        raise ValueError("max_signals_per_day requires rank_feature")
+
+    feature = str(bt.rank_feature).strip()
+    if feature.startswith("sig_"):
+        feature = feature[4:]
+    if feature not in signals.columns:
+        raise ValueError(f"rank_feature {bt.rank_feature!r} not found in signal rows")
+
+    direction = (bt.rank_direction or "desc").strip().lower()
+    if direction not in ("desc", "asc"):
+        raise ValueError("rank_direction must be 'desc' or 'asc'")
+
+    ranked = signals.copy()
+    ranked["_rank_value"] = pd.to_numeric(ranked[feature], errors="coerce")
+    # Missing/non-finite values should not win the shortlist.
+    if direction == "desc":
+        ranked["_rank_sort"] = ranked["_rank_value"].replace([np.inf, -np.inf], np.nan).fillna(-np.inf)
+        ascending = False
+    else:
+        ranked["_rank_sort"] = ranked["_rank_value"].replace([np.inf, -np.inf], np.nan).fillna(np.inf)
+        ascending = True
+
+    sort_cols = ["date", "_rank_sort", "symbol", "scan_time_et"]
+    ranked = ranked.sort_values(sort_cols, ascending=[True, ascending, True, True])
+    capped = ranked.groupby("date", sort=False, group_keys=False).head(n).copy()
+    dropped = len(signals) - len(capped)
+    capped = capped.drop(columns=["_rank_value", "_rank_sort"], errors="ignore")
+    return capped, dropped
+
+
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
@@ -688,6 +749,9 @@ def run_backtest(
         signals, n_skipped_regime = _apply_spy_regime_filter(
             signals, db_path, bt.spy_regime_filter,
         )
+
+    n_skipped_rank_cap = 0
+    signals, n_skipped_rank_cap = _apply_signal_rank_cap(signals, bt)
 
     # Group by (symbol, date) so we can amortize the raw_bars fetch
     signals = signals.sort_values(["date", "symbol", "scan_time_et"]).copy()
@@ -870,11 +934,16 @@ def run_backtest(
             "start_date": bt.start_date, "end_date": bt.end_date,
             "generated_at_utc": generated_at,
             "n_signals_total": n_signals_total,
-            "n_signals_skipped": n_skipped_regime + n_nodata,
+            "n_signals_skipped": n_skipped_regime + n_skipped_rank_cap + n_nodata,
             "n_trades": n_trades,
             "net_pnl_bps": net_pnl_bps,
             "win_rate": win_rate,
-            "notes": f"filter_mode={bt.filter_mode}; min_exit_minutes={bt.min_exit_minutes}; entry_delay_minutes={bt.entry_delay_minutes}",
+            "notes": (
+                f"filter_mode={bt.filter_mode}; min_exit_minutes={bt.min_exit_minutes}; "
+                f"entry_delay_minutes={bt.entry_delay_minutes}; "
+                f"max_signals_per_day={bt.max_signals_per_day}; "
+                f"rank_feature={bt.rank_feature}; rank_direction={bt.rank_direction}"
+            ),
             "conditional_exits_json": cond_exits_serialized,
         })
         storage.insert_backtest_trades(conn, run_uuid, trades)
@@ -912,7 +981,11 @@ def run_backtest(
         "symbol_exclude": bt.symbol_exclude,
         "n_signals_total": n_signals_total,
         "n_signals_skipped_regime": n_skipped_regime,
+        "n_signals_skipped_rank_cap": n_skipped_rank_cap,
         "n_signals_no_data": n_nodata,
+        "max_signals_per_day": bt.max_signals_per_day,
+        "rank_feature": bt.rank_feature,
+        "rank_direction": bt.rank_direction,
         "n_trades": n_trades,
         "win_rate": win_rate,
         "net_pnl_bps": net_pnl_bps,

@@ -1131,6 +1131,27 @@ class BacktestRunRequest(BaseModel):
             "1 = enter at the next minute bar open, useful for conservative 09:30 execution audits."
         ),
     )
+    max_signals_per_day: int | None = Field(
+        default=None,
+        ge=1,
+        le=100,
+        description=(
+            "v0.7.23: optional shortlist cap. If set, keep only top/bottom N signals "
+            "per signal date using rank_feature after the rule fires."
+        ),
+    )
+    rank_feature: str | None = Field(
+        default=None,
+        description=(
+            "v0.7.23: scan-time feature used for max_signals_per_day ranking, e.g. "
+            "'relative_volume', 'ret_vs_spy', 'momentum', or 'intraday_range_position'. "
+            "Do not use outcome/leaky columns."
+        ),
+    )
+    rank_direction: str = Field(
+        default="desc",
+        description="v0.7.23: 'desc' keeps largest rank_feature values; 'asc' keeps smallest.",
+    )
     just_in_time_backfill: bool = Field(
         default=True,
         description=(
@@ -1381,6 +1402,9 @@ def _backtest_request_to_config(req: BacktestRunRequest) -> backtest.BacktestCon
         filter_mode=req.filter_mode,
         min_exit_minutes=req.min_exit_minutes,
         entry_delay_minutes=req.entry_delay_minutes,
+        max_signals_per_day=req.max_signals_per_day,
+        rank_feature=req.rank_feature,
+        rank_direction=req.rank_direction,
         just_in_time_backfill=req.just_in_time_backfill,
         delete_raw_bars_after=req.delete_raw_bars_after,
         conditional_exits=cond_branches,
@@ -1423,6 +1447,9 @@ def _normalise_backtest_preset_dict(raw: dict) -> dict:
         "filter_mode": _first_present(cfg, ["filter_mode", "signal_filter_mode"], "standard"),
         "entry_delay_minutes": _first_present(cfg, ["entry_delay_minutes", "entry_delay", "entry_delay_min"], 0),
         "min_exit_minutes": _first_present(cfg, ["min_exit_minutes", "min_exit_delay", "min_exit_delay_minutes"], 0),
+        "max_signals_per_day": _first_present(cfg, ["max_signals_per_day", "max_trades_per_day", "top_k_per_day", "top_k"], None),
+        "rank_feature": _first_present(cfg, ["rank_feature", "rank_by", "sort_feature"], None),
+        "rank_direction": _first_present(cfg, ["rank_direction", "rank_order", "sort_direction"], "desc"),
         "just_in_time_backfill": _first_present(cfg, ["just_in_time_backfill", "jit_backfill", "jit"], True),
         "delete_raw_bars_after": _first_present(cfg, ["delete_raw_bars_after"], False),
         "conditional_exits": _first_present(cfg, ["conditional_exits", "conditional_exit_branches"], []),
