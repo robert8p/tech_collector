@@ -247,25 +247,45 @@ def _simulate_trade(
             exit_price = bar["open"] * slip_exit_mult
             gross_bps = (bar["open"] - entry_price) / entry_price * 10_000
             net_bps = (exit_price - effective_entry) / effective_entry * 10_000
-            # v0.7.12: invariant check on the main-loop TIME exit (parity
-            # with the fallback-path invariant on line ~327). A timestop
-            # TIME exit is supposed to fire because the trade ran out of
-            # session time without hitting TP/SL. Its gross return MUST
-            # therefore lie within [-sl_level, +tp_level] (with a 1 bp
-            # tolerance for floating-point drift). If it doesn't, the
-            # entry bar was almost certainly an after-hours bar that
-            # `_find_scan_bar_ts` should have rejected — the v0.7.12
-            # session guard prevents that, but keep the invariant as
-            # defense-in-depth so any future regression at the bar-
-            # selection layer fails LOUDLY rather than silently writing
-            # contaminated trades.
+            # v0.7.13: invariant check on the main-loop TIME exit (parity
+            # with the fallback-path invariant). A timestop TIME exit fires
+            # because the trade ran out of session time without hitting TP
+            # or SL. The bar-vs-level checks (`bar["high"] >= tp_price`,
+            # `bar["low"] <= sl_price`) are evaluated against `tp_price` and
+            # `sl_price`, both of which are derived from `effective_entry`
+            # (post entry-side slippage). The invariant must therefore use
+            # the SAME basis: a timestop bar's open expressed as bps from
+            # `effective_entry` must lie within [-sl_level, +tp_level] with
+            # a 1 bp tolerance.
+            #
+            # v0.7.12 incorrectly compared raw `gross_bps` (measured from
+            # `entry_price`, not `effective_entry`) to `tp_level` directly.
+            # Because `effective_entry = entry_price * (1 + slip*split/1e4)`,
+            # raw gross sits offset from effective gross by the entry-side
+            # slippage in bps (e.g., 7.5 bps for slip=15, split=0.5). That
+            # offset caused legitimate timestop exits at price slightly
+            # above TP — but below the actual `tp_price` so TP correctly
+            # didn't fire — to falsely trigger the invariant.
+            #
+            # Worked example that exposed the bug (HOLDOUT v0.7.12 attempt):
+            #   entry_price=186.77, slip=15, split=0.5
+            #   effective_entry = 186.91, tp_price = 187.85 (50 bps above
+            #     effective_entry)
+            #   timestop bar open = 187.74 < tp_price → TP correctly didn't
+            #     fire in any prior bar
+            #   gross_bps_raw = +51.94 bps (just above tp_level=50)
+            #   gross_bps_eff = +44.4 bps (correctly below tp_level=50)
+            # The v0.7.13 effective-entry-based invariant lets this through
+            # as a legitimate TIME exit.
+            gross_eff_bps = (bar["open"] - effective_entry) / effective_entry * 10_000
             tol = 1.0
-            if gross_bps > tp_level + tol or gross_bps < -sl_level - tol:
+            if gross_eff_bps > tp_level + tol or gross_eff_bps < -sl_level - tol:
                 raise AssertionError(
                     f"TIME exit (main-loop) invariant violated: "
-                    f"gross_bps={gross_bps:.2f} outside "
-                    f"[-{sl_level}, +{tp_level}]. "
+                    f"gross_eff_bps={gross_eff_bps:.2f} outside "
+                    f"[-{sl_level}, +{tp_level}] (gross_bps_raw={gross_bps:.2f}). "
                     f"entry_ts={entry_ts_utc}, entry_price={entry_price}, "
+                    f"effective_entry={effective_entry:.4f}, "
                     f"timestop_bar_ts={bar.get('timestamp_utc')}, "
                     f"timestop_open={bar['open']:.4f}, "
                     f"et_hh:et_mm={et_hh:02d}:{et_mm:02d}. "
@@ -345,15 +365,27 @@ def _simulate_trade(
         gross_bps = (last["close"] - entry_price) / entry_price * 10_000
         net_bps = (exit_price - effective_entry) / effective_entry * 10_000
         # Invariant check: a TIME exit means neither TP nor SL fired across
-        # the entire held bar range. The gross return must therefore be
-        # within [-sl_level, +tp_level] (with a tiny tolerance for floating
-        # point drift).
+        # the entire held bar range. The price at exit (last bar's close)
+        # must therefore lie within [-sl_level, +tp_level] of effective_entry
+        # — the same basis used by the bar-vs-level checks for TP/SL inside
+        # the main loop.
+        #
+        # v0.7.13: fixed to use effective_entry, matching the main-loop TIME
+        # exit invariant. v0.7.1 introduced this check using raw entry_price
+        # which had the same arithmetic bug as the v0.7.12 main-loop
+        # invariant — see backtest.py main-loop comment block for full
+        # explanation. The bug rarely fired here in practice because the
+        # fallback path is only taken with timestop disabled AND no TP/SL
+        # in any bar, but correcting it is essential for honesty.
+        gross_eff_bps = (last["close"] - effective_entry) / effective_entry * 10_000
         tol = 1.0  # 1 bp tolerance
-        if gross_bps > tp_level + tol or gross_bps < -sl_level - tol:
+        if gross_eff_bps > tp_level + tol or gross_eff_bps < -sl_level - tol:
             raise AssertionError(
-                f"TIME exit invariant violated: gross_bps={gross_bps:.2f} "
-                f"outside [-{sl_level}, +{tp_level}]. Check bar data integrity "
+                f"TIME exit (fallback) invariant violated: "
+                f"gross_eff_bps={gross_eff_bps:.2f} outside [-{sl_level}, +{tp_level}] "
+                f"(gross_bps_raw={gross_bps:.2f}). Check bar data integrity "
                 f"for entry_ts={entry_ts_utc}, entry_price={entry_price}, "
+                f"effective_entry={effective_entry:.4f}, "
                 f"tp_price={tp_price:.4f}, sl_price={sl_price:.4f}, "
                 f"last_close={last['close']:.4f}."
             )

@@ -967,6 +967,88 @@ def test_v0712_run_backtest_AH_only_yields_NO_DATA():
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+def test_v0713_main_loop_TIME_invariant_allows_legit_above_TP_with_slip():
+    """v0.7.13 regression: legitimate timestop TIME exit where bar.open is
+    slightly above raw TP (but BELOW the slippage-adjusted tp_price) must
+    NOT trigger the invariant.
+
+    This is the exact case that fired the v0.7.12 false-positive on the
+    HOLDOUT attempt (2026-01-05, IT sector, entry 186.77, timestop_open
+    187.74, gross_raw +51.94 bps, gross_eff +44.4 bps).
+
+    Mechanics:
+      - tp_level=50, slip=15, split=0.5
+      - effective_entry = 186.77 * 1.00075 = 186.91
+      - tp_price = effective_entry * 1.005 = 187.85 (the threshold for
+        bar.high to fire TP)
+      - timestop bar opens at 187.74 < tp_price → TP correctly didn't
+        fire in any prior bar (and won't on this one either; timestop
+        check happens before TP check)
+      - raw gross at timestop = (187.74-186.77)/186.77*1e4 = 51.94 bps
+      - effective gross at timestop = (187.74-186.91)/186.91*1e4 = 44.4 bps
+      - Invariant must compare effective gross (44.4) to tp_level (50) →
+        within bounds, no raise.
+    """
+    from tech_collector import backtest as _bt
+    # Build a session: entry at 13:30 ET (winter, UTC 18:30), bars walk
+    # quietly with high never reaching tp_price (187.85), timestop bar at
+    # 15:50 ET (UTC 20:50) opens at 187.74.
+    bars = []
+    # Entry bar at 13:30 ET (UTC 18:30 winter) — start of trade
+    bars.append(_bar("2026-01-05T18:30:00Z", 186.77, 186.85, 186.70, 186.80))
+    # Bars walking through the afternoon, high stays below 187.85
+    for utc_h, utc_m_start in [(18, 31), (19, 0), (19, 30), (20, 0), (20, 30)]:
+        for m in range(utc_m_start, utc_m_start + 5):
+            bars.append(_bar(f"2026-01-05T{utc_h:02d}:{m % 60:02d}:00Z",
+                            186.80 + (m * 0.01), 186.95 + (m * 0.01),
+                            186.70 + (m * 0.01), 186.85 + (m * 0.01)))
+    # Timestop bar at 15:50 ET (UTC 20:50) — opens at 187.74 (just above raw TP)
+    bars.append(_bar("2026-01-05T20:50:00Z", 187.74, 187.80, 187.70, 187.75))
+
+    result = _bt._simulate_trade(
+        bars=bars, entry_ts_utc="2026-01-05T18:30:00Z",
+        entry_price=186.77, tp_level=50.0, sl_level=100.0,
+        timestop_et_hhmm="15:50", slippage_bps=15.0, entry_slippage_split=0.5,
+    )
+    _check("v0713: legit timestop with raw_gross slightly above TP doesn't raise",
+           result["exit_reason"] == "TIME",
+           f"got reason={result['exit_reason']!r}")
+    _check("v0713: legit timestop returns expected exit_time 15:50",
+           result["exit_time_et"] == "15:50",
+           f"got time={result['exit_time_et']!r}")
+    # The raw gross will be ~51.94 bps as in the production trace
+    _check("v0713: legit timestop raw gross is in expected range (~52 bps)",
+           50 < result["gross_return_bps"] < 55,
+           f"got gross={result['gross_return_bps']:.2f}")
+
+
+def test_v0713_main_loop_TIME_invariant_still_catches_phantom():
+    """v0.7.13 regression: the original phantom case (large negative gross
+    from after-hours entry) must still raise the invariant. The fix only
+    adjusted the *basis* (raw → effective), not the *threshold*, so AH-bar
+    phantoms with gross outside [-100, +50] still trigger.
+    """
+    from tech_collector import backtest as _bt
+    # Same setup as test_v0712_simulate_trade_main_loop_invariant_fires:
+    # entry at AH bar (UTC 00:00 = ET 19:00 winter), bar.open of 92.0
+    # against entry_price 100.0 = -800 bps gross (way below -SL).
+    bars = [
+        _bar("2024-11-15T00:00:00Z", 92.0, 92.5, 91.5, 92.0),
+        _bar("2024-11-15T00:01:00Z", 92.0, 92.1, 91.9, 92.0),
+    ]
+    raised = False
+    try:
+        _bt._simulate_trade(
+            bars=bars, entry_ts_utc="2024-11-15T00:00:00Z",
+            entry_price=100.0, tp_level=75.0, sl_level=100.0,
+            timestop_et_hhmm="15:50", slippage_bps=15.0, entry_slippage_split=0.5,
+        )
+    except AssertionError:
+        raised = True
+    _check("v0713: AH phantom (gross=-800) still raises post-fix",
+           raised, "phantom case unexpectedly slipped through after fix")
+
+
 def main() -> int:
     print("SMOKE: backtest_audit + _simulate_trade fix")
     print("=" * 60)
@@ -1000,6 +1082,9 @@ def main() -> int:
         test_v0712_find_scan_bar_ts_skips_AH_finds_regular,
         test_v0712_simulate_trade_main_loop_invariant_fires,
         test_v0712_run_backtest_AH_only_yields_NO_DATA,
+        # v0.7.13
+        test_v0713_main_loop_TIME_invariant_allows_legit_above_TP_with_slip,
+        test_v0713_main_loop_TIME_invariant_still_catches_phantom,
     ]
     for t in tests:
         try:
