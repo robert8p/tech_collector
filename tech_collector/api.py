@@ -39,7 +39,7 @@ import pandas as pd
 
 from . import (
     backtest, collector, config, exporter, feature_computer, jobs,
-    rule_tester, storage, validate,
+    rule_tester, storage, validate, market_replay,
 )
 from .universes import SECTOR_UNIVERSES
 
@@ -2891,6 +2891,102 @@ def rule034_shadow_run(req: Rule034ShadowRequest):
         "top20_preview": _rule034_shadow_export_rows(candidates, 20),
     })
     return manifest
+
+
+# ---------------------------------------------------------------------------
+# Multi-rule historic market replay (v0.7.30)
+# ---------------------------------------------------------------------------
+class MarketReplayRunRequest(BaseModel):
+    """Replay the historical market the way the future live scanner should behave.
+
+    The engine evaluates all requested rules each day, applies per-rule rank caps,
+    deduplicates overlapping symbols, applies a global daily exposure cap, and then
+    optionally simulates delayed-entry TP/SL/timestop outcomes.
+    """
+    start_date: str = Field(default="2024-04-22", description="YYYY-MM-DD inclusive")
+    end_date: str = Field(default="2026-04-17", description="YYYY-MM-DD inclusive")
+    sector: str = Field(default="Information Technology")
+    rules: list[str] = Field(
+        default_factory=lambda: [
+            "rule009_refined_top10", "rule029_top3", "rule033_top20", "rule034_conservative_top20"
+        ],
+        description="Rule registry ids to include. See /market-replay/rules.",
+    )
+    slippage_bps: float = Field(default=25.0, ge=0.0, le=100.0)
+    global_max_trades_per_day: int = Field(default=10, ge=1, le=100)
+    max_trades_per_symbol_per_day: int = Field(default=1, ge=0, le=10)
+    dedupe_policy: str = Field(
+        default="best_priority",
+        description="allow_all or best_priority. best_priority is default and prevents duplicate symbol-day trades.",
+    )
+    capital_mode: str = Field(default="equal_weight")
+    include_virtual_trades: bool = Field(default=True)
+    just_in_time_backfill: bool = Field(default=True)
+    delete_raw_bars_after: bool = Field(default=False)
+
+
+@app.get("/market-replay/rules", dependencies=[Depends(_require_api_key)])
+def market_replay_rules(sector: str = "Information Technology"):
+    """Return the canonical rule registry used by the multi-rule replay engine."""
+    sector = _resolve_sector(sector)
+    reg = market_replay.registry(sector)
+    return {
+        "version": config.APP_VERSION,
+        "sector": sector,
+        "default_rules": market_replay.DEFAULT_RULE_IDS,
+        "rules": [reg[k].to_public_dict() for k in sorted(reg.keys())],
+    }
+
+
+def _market_replay_job_wrapper(params: dict) -> dict:
+    return market_replay.run_market_replay(
+        start_date=params["start_date"],
+        end_date=params["end_date"],
+        sector=params.get("sector") or "Information Technology",
+        rule_ids=params.get("rules") or market_replay.DEFAULT_RULE_IDS,
+        slippage_bps=float(params.get("slippage_bps", 25.0)),
+        global_max_trades_per_day=int(params.get("global_max_trades_per_day", 10)),
+        max_trades_per_symbol_per_day=int(params.get("max_trades_per_symbol_per_day", 1)),
+        dedupe_policy=params.get("dedupe_policy", "best_priority"),
+        capital_mode=params.get("capital_mode", "equal_weight"),
+        include_virtual_trades=bool(params.get("include_virtual_trades", True)),
+        just_in_time_backfill=bool(params.get("just_in_time_backfill", True)),
+        delete_raw_bars_after=bool(params.get("delete_raw_bars_after", False)),
+        db_path=config.DB_PATH,
+        evidence_dir=config.EVIDENCE_PACK_DIR,
+    )
+
+
+@app.post("/market-replay/run", dependencies=[Depends(_require_api_key)])
+def market_replay_run(req: MarketReplayRunRequest):
+    """Start an async multi-rule historical replay job and return its job id.
+
+    Poll /jobs/{job_id}. On success the job result includes pack_download_url.
+    """
+    sector = _resolve_sector(req.sector)
+    params = req.model_dump()
+    params["sector"] = sector
+    job = jobs.registry.create("market_replay", params)
+    jobs.registry.run_async(job, _market_replay_job_wrapper, params=params)
+    return {
+        "status": "queued",
+        "job_id": job.job_id,
+        "kind": job.kind,
+        "poll_url": f"/jobs/{job.job_id}",
+        "request": params,
+    }
+
+
+@app.post("/market-replay/run-sync", dependencies=[Depends(_require_api_key)])
+def market_replay_run_sync(req: MarketReplayRunRequest):
+    """Run replay synchronously. Useful for short ranges/smoke tests; use async for full-span."""
+    sector = _resolve_sector(req.sector)
+    params = req.model_dump()
+    params["sector"] = sector
+    try:
+        return _market_replay_job_wrapper(params)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 # Audit + repair (v0.7.1): verify stored backtest outcomes against the
 # canonical reference simulator. Produces evidence pack on divergence.

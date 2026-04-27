@@ -275,6 +275,7 @@
 <section>
   <h2>data pipeline</h2>
   <p class="section-hint">one-click generate chains backfill → compute → export. manual buttons below for partial re-runs.</p>
+
   <div class="row">
     <div style="flex: 2;">
       <label>sector</label>
@@ -289,6 +290,7 @@
       </label>
     </div>
   </div>
+
   <div class="row">
     <div>
       <label>start date</label>
@@ -558,6 +560,53 @@
       </div>
     </div>
     <div id="r34-shadow-status" style="display:none; margin-top: 8px; color: var(--text-dim); font-size: 11px; font-family: var(--mono);"></div>
+  </div>
+
+  <div style="margin-top: 16px; margin-bottom: 12px; padding: 12px 14px; border: 1px solid var(--border-strong); background: var(--bg);">
+    <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap;">
+      <div>
+        <div style="color: var(--accent); font-family: var(--serif); font-style: italic; font-size: 13px; margin-bottom: 2px;">Historic multi-rule market replay</div>
+        <div style="color: var(--text-faint); font-size: 11px; line-height: 1.45; max-width: 760px;">
+          Replays the daily Technology market as the future live scanner should behave: all active rules compete for candidates, symbol/day duplicates are removed, a global daily cap is applied, and selected trades are simulated with delayed entry, TP/SL, timestop, and slippage.
+        </div>
+      </div>
+      <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+        <button class="small" id="mr-run-r009" type="button">run Rule009 only</button>
+        <button class="small" id="mr-run-r029" type="button">run Rule029 only</button>
+        <button class="small" id="mr-run-r009-r029" type="button">run Rule009 + Rule029</button>
+        <button class="small" id="mr-run-all" type="button">run all active rules ▶</button>
+      </div>
+    </div>
+    <div class="row" style="gap: 8px; align-items: end; margin-top: 10px;">
+      <div style="flex: 1;">
+        <label>replay start</label>
+        <input type="date" id="mr-start" value="2024-04-22">
+      </div>
+      <div style="flex: 1;">
+        <label>replay end</label>
+        <input type="date" id="mr-end" value="2026-04-17">
+      </div>
+      <div style="flex: 1;">
+        <label>slippage bps</label>
+        <input type="number" id="mr-slippage" value="25" min="0" max="100" step="1">
+      </div>
+      <div style="flex: 1;">
+        <label>global max trades/day</label>
+        <input type="number" id="mr-max-day" value="10" min="1" max="100" step="1">
+      </div>
+      <div style="flex: 1;">
+        <label>dedupe policy</label>
+        <select id="mr-dedupe">
+          <option value="best_priority" selected>best_priority</option>
+          <option value="allow_all">allow_all research mode</option>
+        </select>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px;">
+      <button class="small" id="mr-refresh-packs" type="button">refresh packs</button>
+      <span style="color: var(--text-faint); font-size: 11px;">Default priority: Rule029 &gt; Rule009 refined &gt; Rule034 &gt; Rule033. Use the ZIP output to assess combined-scanner edge, overlap, rejected signals, symbol concentration, and worst days.</span>
+    </div>
+    <div id="mr-status" style="display:none; margin-top: 8px; color: var(--text-dim); font-size: 11px; font-family: var(--mono); white-space: pre-wrap;"></div>
   </div>
   <div class="row">
     <label title="Upload either a bare rule bundle or a full backtest preset JSON. A preset can populate rule, TP/SL, dates, filter mode, min exit delay, JIT and conditional exits.">backtest preset / rule bundle (json)</label>
@@ -1085,7 +1134,7 @@ function setAuthed(ok) {
     "run-pack-monthly","run-export-rows","run-export-rows-parquet",
     "run-generate","refresh-packs",
     // v0.4.0 rule tester
-    "rules-run","rules-paste-toggle","refresh-tracked","bt-run","bt-batch-run","r9-shadow-run",
+    "rules-run","rules-paste-toggle","refresh-tracked","bt-run","bt-batch-run","r9-shadow-run","r29-shadow-run","r33-shadow-run","r34-shadow-run","mr-run-r009","mr-run-r029","mr-run-r009-r029","mr-run-all","mr-refresh-packs",
     // v0.5.0 chained backfill
     "run-chained-backfill",
   ];
@@ -2902,6 +2951,84 @@ function toast(msg, kind) {
   t._timer = setTimeout(() => { t.className = kind || ""; }, 3200);
 }
 
+
+// v0.7.30 historic multi-rule market replay controls
+function _mrStatus(msg, kind) {
+  const out = document.getElementById("mr-status");
+  if (!out) return;
+  out.style.display = "block";
+  out.textContent = msg;
+  out.style.color = kind === "err" ? "#ff9b9b" : "var(--text-dim)";
+}
+
+function _marketReplayPayload(ruleIds) {
+  return {
+    start_date: document.getElementById("mr-start").value || "2024-04-22",
+    end_date: document.getElementById("mr-end").value || "2026-04-17",
+    sector: "Information Technology",
+    rules: ruleIds,
+    slippage_bps: Number(document.getElementById("mr-slippage").value || 25),
+    global_max_trades_per_day: Number(document.getElementById("mr-max-day").value || 10),
+    max_trades_per_symbol_per_day: 1,
+    dedupe_policy: document.getElementById("mr-dedupe").value || "best_priority",
+    capital_mode: "equal_weight",
+    include_virtual_trades: true,
+    just_in_time_backfill: true,
+    delete_raw_bars_after: false
+  };
+}
+
+async function _runMarketReplay(ruleIds, label) {
+  _mrStatus("queuing market replay: " + label + "...", "");
+  try {
+    const r = await api("/market-replay/run", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(_marketReplayPayload(ruleIds))
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(JSON.stringify(j));
+    const jobId = j.job_id;
+    _mrStatus("market replay job queued: " + jobId.slice(0,8) + "\npolling...", "");
+    const result = await _pollJob(jobId, (status, elapsed) => {
+      _mrStatus("market replay " + jobId.slice(0,8) + ": " + status + " (" + elapsed + "s elapsed)", "");
+    });
+    if (result.status === "failed") {
+      _mrStatus("market replay failed:\n" + (result.error || "unknown error").slice(0, 3000), "err");
+      toast("market replay failed", "err");
+      return;
+    }
+    const res = result.result || {};
+    const summary = res.summary || {};
+    _mrStatus(JSON.stringify({
+      label,
+      pack_filename: res.pack_filename,
+      pack_download_url: res.pack_download_url,
+      n_trades: summary.n_trades,
+      avg_net_bps_per_trade: summary.avg_net_bps_per_trade,
+      net_pnl_bps: summary.net_pnl_bps,
+      firing_days: summary.firing_days,
+      worst_day: summary.worst_day,
+      rule_summary: summary.rule_summary
+    }, null, 2), "");
+    toast("market replay pack created", "ok");
+    refreshPacks();
+  } catch (e) {
+    _mrStatus("market replay request failed: " + (e.message || e), "err");
+    toast("market replay failed", "err");
+  }
+}
+
+const _mrR009 = document.getElementById("mr-run-r009");
+if (_mrR009) _mrR009.onclick = () => _runMarketReplay(["rule009_refined_top10"], "Rule009 only");
+const _mrR029 = document.getElementById("mr-run-r029");
+if (_mrR029) _mrR029.onclick = () => _runMarketReplay(["rule029_top3"], "Rule029 only");
+const _mrR009R029 = document.getElementById("mr-run-r009-r029");
+if (_mrR009R029) _mrR009R029.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3"], "Rule009 + Rule029");
+const _mrAll = document.getElementById("mr-run-all");
+if (_mrAll) _mrAll.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule033_top20", "rule034_conservative_top20"], "all active rules");
+const _mrRefresh = document.getElementById("mr-refresh-packs");
+if (_mrRefresh) _mrRefresh.onclick = refreshPacks;
 boot();
 </script>
 
