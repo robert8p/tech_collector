@@ -1,0 +1,30 @@
+{
+  "preset_type": "tech_collector_backtest_preset",
+  "preset_version": 1,
+  "label": "rule009_top10_momentum_primary_tp100_sl200_slip10_fullspan",
+  "rule": {
+    "id": "tech_rule_009_1030_spyvol005_spymom_pos",
+    "sector": "Information Technology",
+    "target": "target",
+    "predicates": [
+      {"feature": "minutes_since_open", "op": "==", "value": 60},
+      {"feature": "spy_vol", "op": ">=", "value": 0.005},
+      {"feature": "spy_momentum", "op": ">=", "value": 0}
+    ],
+    "notes": "Validated high-volatility 10:30 Technology opportunity mode. Rank qualifying symbols by momentum descending and keep top 10 per day."
+  },
+  "tp_bps": 100,
+  "sl_bps": 200,
+  "timestop_et": "15:50",
+  "slippage_bps": 10,
+  "start_date": "2024-04-22",
+  "end_date": "2026-04-17",
+  "filter_mode": "standard",
+  "entry_delay_minutes": 1,
+  "min_exit_minutes": 1,
+  "max_signals_per_day": 10,
+  "rank_feature": "momentum",
+  "rank_direction": "desc",
+  "just_in_time_backfill": true,
+  "conditional_exits": []
+}

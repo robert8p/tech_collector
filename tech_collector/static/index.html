@@ -257,6 +257,10 @@
 <section>
   <h2>reference csv</h2>
   <p class="section-hint">upload the original tech_research_dataset.csv once. required by /validate.</p>
+
+  <div style="margin-top: 10px; margin-bottom: 12px; padding: 10px 12px; border: 1px dashed var(--border-strong); background: var(--bg);">
+    <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap;">
+      <div>
   <div class="row">
     <div style="flex: 3;">
       <label>file</label>
@@ -465,6 +469,42 @@
     the trade have made money."
   </p>
 
+  <div style="margin-top: 10px; margin-bottom: 12px; padding: 10px 12px; border: 1px dashed var(--border-strong); background: var(--bg);">
+    <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap;">
+      <div>
+        <div style="color: var(--accent); font-family: var(--serif); font-style: italic; font-size: 13px; margin-bottom: 2px;">validated candidate strategies</div>
+        <div style="color: var(--text-faint); font-size: 11px; line-height: 1.45;">
+          Rule 009 is a high-volatility 10:30 Technology opportunity mode. These buttons populate the exact validated settings.
+        </div>
+      </div>
+      <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+        <button class="small" id="bt-strategy-rule009-top10-load" type="button" title="Load Rule 009 top 10/day by momentum with TP100/SL200, entry delay 1, min exit delay 1.">load Rule009 top10</button>
+        <button class="small" id="bt-strategy-rule009-top10-run" type="button" title="Load and immediately run the primary Rule 009 top10 strategy.">run top10 now ▶</button>
+        <button class="small" id="bt-strategy-rule009-top20-load" type="button" title="Load Rule 009 top 20/day by momentum with TP100/SL200, entry delay 1, min exit delay 1.">load Rule009 top20</button>
+        <button class="small" id="bt-strategy-rule009-top20-run" type="button" title="Load and immediately run the secondary Rule 009 top20 strategy.">run top20 now ▶</button>
+      </div>
+    </div>
+    <div style="margin-top: 8px; color: var(--text-faint); font-size: 11px; font-family: var(--mono);">
+      Logic: scan_time 10:30, SPY volatility >= 0.005, SPY momentum >= 0, rank by momentum desc, cap signals/day.
+    </div>
+  </div>
+
+
+  <div style="margin-top: 10px; margin-bottom: 12px; padding: 10px 12px; border: 1px dashed var(--border-strong); background: var(--bg);">
+    <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap;">
+      <div>
+        <div style="color: var(--accent); font-family: var(--serif); font-style: italic; font-size: 13px; margin-bottom: 2px;">Rule009 live-shadow monitor</div>
+        <div style="color: var(--text-faint); font-size: 11px; line-height: 1.45;">
+          Read-only opportunity mode: checks the 10:30 Technology high-volatility trigger, ranks candidates by momentum, and exports top10/top20 evidence. No orders are placed.
+        </div>
+      </div>
+      <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+        <input type="date" id="r9-shadow-date" title="Optional. Leave blank to use the latest available 10:30 scan date." style="max-width: 150px;">
+        <button class="small" id="r9-shadow-run" type="button" title="Run Rule009 live-shadow monitor for the selected/latest date and create an evidence ZIP.">run Rule009 shadow now ▶</button>
+      </div>
+    </div>
+    <div id="r9-shadow-status" style="display:none; margin-top: 8px; color: var(--text-dim); font-size: 11px; font-family: var(--mono);"></div>
+  </div>
   <div class="row">
     <label title="Upload either a bare rule bundle or a full backtest preset JSON. A preset can populate rule, TP/SL, dates, filter mode, min exit delay, JIT and conditional exits.">backtest preset / rule bundle (json)</label>
     <input type="file" id="bt-file" accept=".json,application/json">
@@ -991,7 +1031,7 @@ function setAuthed(ok) {
     "run-pack-monthly","run-export-rows","run-export-rows-parquet",
     "run-generate","refresh-packs",
     // v0.4.0 rule tester
-    "rules-run","rules-paste-toggle","refresh-tracked","bt-run","bt-batch-run",
+    "rules-run","rules-paste-toggle","refresh-tracked","bt-run","bt-batch-run","r9-shadow-run",
     // v0.5.0 chained backfill
     "run-chained-backfill",
   ];
@@ -1897,7 +1937,98 @@ async function _currentBacktestPresetObject() {
   };
 }
 
+function _rule009MomentumStrategyPreset(topK=10) {
+  const k = Number(topK) === 20 ? 20 : 10;
+  return {
+    preset_type: "tech_collector_backtest_preset",
+    preset_version: 1,
+    label: "rule009_1030_high_vol_momentum_top" + k + "_tp100_sl200",
+    rule: {
+      id: "tech_rule_009_1030_spyvol005_spymom_pos",
+      sector: "Information Technology",
+      target: "target",
+      predicates: [
+        {feature: "minutes_since_open", op: "==", value: 60},
+        {feature: "spy_vol", op: ">=", value: 0.005},
+        {feature: "spy_momentum", op: ">=", value: 0}
+      ],
+      notes: "Validated high-volatility 10:30 Technology opportunity mode. Rank qualifying symbols by momentum descending and keep top " + k + " per day."
+    },
+    tp_bps: 100,
+    sl_bps: 200,
+    timestop_et: "15:50",
+    slippage_bps: 10,
+    start_date: "2024-04-22",
+    end_date: "2026-04-17",
+    filter_mode: "standard",
+    entry_delay_minutes: 1,
+    min_exit_minutes: 1,
+    max_signals_per_day: k,
+    rank_feature: "momentum",
+    rank_direction: "desc",
+    just_in_time_backfill: true,
+    conditional_exits: []
+  };
+}
+
+function _loadRule009MomentumStrategy(topK=10, runNow=false) {
+  const preset = _rule009MomentumStrategyPreset(topK);
+  _applyBacktestPreset(preset, "validated Rule009 top" + (Number(topK) === 20 ? 20 : 10) + " strategy");
+  _btStatus("Loaded validated Rule 009 top " + (Number(topK) === 20 ? 20 : 10) + "/day by momentum. Review settings, then run backtest.", "ok");
+  toast("Rule009 top" + (Number(topK) === 20 ? 20 : 10) + " loaded", "ok");
+  if (runNow) setTimeout(() => document.getElementById("bt-run").click(), 100);
+}
+
+const _r9t10Load = document.getElementById("bt-strategy-rule009-top10-load");
+if (_r9t10Load) _r9t10Load.onclick = () => _loadRule009MomentumStrategy(10, false);
+const _r9t10Run = document.getElementById("bt-strategy-rule009-top10-run");
+if (_r9t10Run) _r9t10Run.onclick = () => _loadRule009MomentumStrategy(10, true);
+const _r9t20Load = document.getElementById("bt-strategy-rule009-top20-load");
+if (_r9t20Load) _r9t20Load.onclick = () => _loadRule009MomentumStrategy(20, false);
+const _r9t20Run = document.getElementById("bt-strategy-rule009-top20-run");
+if (_r9t20Run) _r9t20Run.onclick = () => _loadRule009MomentumStrategy(20, true);
+
+async function _runRule009ShadowNow() {
+  const out = document.getElementById("r9-shadow-status");
+  out.style.display = "block";
+  out.textContent = "running Rule009 shadow monitor...";
+  const dateVal = (document.getElementById("r9-shadow-date").value || "").trim();
+  const body = {
+    date: dateVal || null,
+    sector: "Information Technology",
+    top_ks: [10, 20],
+    evaluate: true,
+    just_in_time_backfill: true,
+    slippage_bps: 10
+  };
+  try {
+    const r = await api("/rule009/shadow/run", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(JSON.stringify(j));
+    out.textContent = JSON.stringify({
+      status: j.status,
+      date: j.date,
+      active: j.active,
+      total_candidates_before_rank_cap: j.total_candidates_before_rank_cap,
+      pack_filename: j.pack_filename,
+      evaluations: (j.evaluations || []).map(e => ({top_k: e.top_k, status: e.status, avg_net_bps_per_trade: e.summary && e.summary.avg_net_bps_per_trade, n_trades: e.summary && e.summary.n_trades}))
+    }, null, 2);
+    toast("Rule009 shadow pack created", "ok");
+    refreshPacks();
+  } catch (e) {
+    out.textContent = "Rule009 shadow failed: " + e.message;
+    toast("Rule009 shadow failed", "err");
+  }
+}
+const _r9ShadowRun = document.getElementById("r9-shadow-run");
+if (_r9ShadowRun) _r9ShadowRun.onclick = _runRule009ShadowNow;
+
 document.getElementById("bt-download-preset").onclick = async () => {
+
   try {
     const preset = await _currentBacktestPresetObject();
     const safeRule = String(preset.rule.id || "backtest_rule").replace(/[^a-zA-Z0-9_-]+/g, "_");
