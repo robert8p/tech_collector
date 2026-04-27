@@ -192,3 +192,7 @@ If spot-check passes → evaluate against locked HOLDOUT criteria above. **DO NO
 - **Audit infrastructure (`_make_time_exit` in `backtest_audit.py`) has the same kind of bug.** It's not in the production path so this isn't urgent, but it should be fixed in the same way (entry-time check instead of gross-based invariant) before any audit-based rerun is trusted.
 
 - **Be honest about uncertainty.** When you've fixed something, say "I think this fixes it; let's verify on production." The v0.7.13 ship-and-fail cycle happened because I claimed correctness based on insufficient testing. Don't repeat it.
+
+## v0.7.29 Rule034 merged monitor
+
+Merged Rule034 conservative monitor into the latest combined app. Preserve all four rule tracks: Rule009 refined, Rule029, Rule033, and Rule034. Rule034 is live-shadow/monitoring only and should not replace Rule033 by default.

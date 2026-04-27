@@ -260,8 +260,7 @@
 
   <div style="margin-top: 10px; margin-bottom: 12px; padding: 10px 12px; border: 1px dashed var(--border-strong); background: var(--bg);">
     <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap;">
-      <div>
-  <div class="row">
+      <div><div class="row">
     <div style="flex: 3;">
       <label>file</label>
       <input type="file" id="csv-file" accept=".csv">
@@ -474,18 +473,24 @@
       <div>
         <div style="color: var(--accent); font-family: var(--serif); font-style: italic; font-size: 13px; margin-bottom: 2px;">validated candidate strategies</div>
         <div style="color: var(--text-faint); font-size: 11px; line-height: 1.45;">
-          Rule 009 is a high-volatility 10:30 Technology opportunity mode. These buttons populate the exact validated settings.
+          Rule 009 is a high-volatility 10:30 Technology opportunity mode. Rule 029 is a 10:30 pullback/reclaim live-shadow candidate. Rule 033 is a 13:30 selloff-event rebound monitor with volume confirmation. Rule 034 is the conservative Rule033 miss-exclusion monitor. These buttons populate the exact validated settings.
         </div>
       </div>
       <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
-        <button class="small" id="bt-strategy-rule009-top10-load" type="button" title="Load Rule 009 top 10/day by momentum with TP100/SL200, entry delay 1, min exit delay 1.">load Rule009 top10</button>
-        <button class="small" id="bt-strategy-rule009-top10-run" type="button" title="Load and immediately run the primary Rule 009 top10 strategy.">run top10 now ▶</button>
-        <button class="small" id="bt-strategy-rule009-top20-load" type="button" title="Load Rule 009 top 20/day by momentum with TP100/SL200, entry delay 1, min exit delay 1.">load Rule009 top20</button>
-        <button class="small" id="bt-strategy-rule009-top20-run" type="button" title="Load and immediately run the secondary Rule 009 top20 strategy.">run top20 now ▶</button>
+        <button class="small" id="bt-strategy-rule009-top10-load" type="button" title="Load Rule 009 top 10/day by momentum with TP100/SL200, entry delay 1, min exit delay 1.">load Rule009 refined top10</button>
+        <button class="small" id="bt-strategy-rule009-top10-run" type="button" title="Load and immediately run the primary Rule 009 top10 strategy.">run refined top10 now ▶</button>
+        <button class="small" id="bt-strategy-rule009-top20-load" type="button" title="Load Rule 009 top 20/day by momentum with TP100/SL200, entry delay 1, min exit delay 1.">load Rule009 refined top20</button>
+        <button class="small" id="bt-strategy-rule009-top20-run" type="button" title="Load and immediately run the secondary Rule 009 top20 strategy.">run refined top20 now ▶</button>
+        <button class="small" id="bt-strategy-rule029-top3-load" type="button" title="Load Rule 029 primary top 3/day by lowest ATR reach with TP100/SL200, entry delay 1, min exit delay 1, 25 bps slippage.">load Rule029 top3</button>
+        <button class="small" id="bt-strategy-rule029-top3-run" type="button" title="Load and immediately run the Rule 029 primary live-shadow strategy.">run Rule029 top3 ▶</button>
+        <button class="small" id="bt-strategy-rule033-top20-load" type="button" title="Load Rule 033 top 20/day by distance-to-day-low with TP100/SL200, entry delay 1, min exit delay 1, 20 bps slippage.">load Rule033 top20</button>
+        <button class="small" id="bt-strategy-rule033-top20-run" type="button" title="Load and immediately run the Rule 033 top20 event-day strategy.">run Rule033 top20 ▶</button>
+        <button class="small" id="bt-strategy-rule034-top20-load" type="button" title="Load Rule 034 conservative top20/day: Rule033 plus gap_filled == 0 and ATR reach <= 10.">load Rule034 conservative</button>
+        <button class="small" id="bt-strategy-rule034-top20-run" type="button" title="Load and immediately run the conservative Rule 034 top20 event-day strategy.">run Rule034 conservative ▶</button>
       </div>
     </div>
     <div style="margin-top: 8px; color: var(--text-faint); font-size: 11px; font-family: var(--mono);">
-      Logic: scan_time 10:30, SPY volatility >= 0.005, SPY momentum >= 0, rank by momentum desc, cap signals/day.
+      Rule009 refined logic: scan_time 10:30, SPY volatility >= 0.005, SPY momentum >= 0, gap_pct <= 0, range_expansion >= 1.0, rank by momentum desc. Rule029 logic: scan_time 10:30, supportive SPY, below-but-not-far-below VWAP, positive VWAP slope, rank by lowest ATR reach. Rule033 logic: scan_time 13:30, SPY selloff, negative momentum, ATR reach <= 13, volume acceleration >= 1.0, rank by distance_to_day_low desc. Rule034 conservative adds gap_filled == 0 and ATR reach <= 10.
     </div>
   </div>
 
@@ -504,6 +509,55 @@
       </div>
     </div>
     <div id="r9-shadow-status" style="display:none; margin-top: 8px; color: var(--text-dim); font-size: 11px; font-family: var(--mono);"></div>
+  </div>
+
+
+  <div style="margin-top: 10px; margin-bottom: 12px; padding: 10px 12px; border: 1px dashed var(--border-strong); background: var(--bg);">
+    <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap;">
+      <div>
+        <div style="color: var(--accent); font-family: var(--serif); font-style: italic; font-size: 13px; margin-bottom: 2px;">Rule029 live-shadow monitor</div>
+        <div style="color: var(--text-faint); font-size: 11px; line-height: 1.45;">
+          Read-only event-day candidate: checks the 10:30 Technology pullback/reclaim trigger, ranks by lowest ATR reach, exports top3/top10 evidence, and compares overlap against Rule009. No orders are placed.
+        </div>
+      </div>
+      <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+        <input type="date" id="r29-shadow-date" title="Optional. Leave blank to use the latest available 10:30 scan date." style="max-width: 150px;">
+        <button class="small" id="r29-shadow-run" type="button" title="Run Rule029 live-shadow monitor for the selected/latest date and create an evidence ZIP.">run Rule029 shadow now ▶</button>
+      </div>
+    </div>
+    <div id="r29-shadow-status" style="display:none; margin-top: 8px; color: var(--text-dim); font-size: 11px; font-family: var(--mono);"></div>
+  </div>
+  <div style="margin-top: 10px; margin-bottom: 12px; padding: 10px 12px; border: 1px dashed var(--border-strong); background: var(--bg);">
+    <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap;">
+      <div>
+        <div style="color: var(--accent); font-family: var(--serif); font-style: italic; font-size: 13px; margin-bottom: 2px;">Rule033 live-shadow monitor</div>
+        <div style="color: var(--text-faint); font-size: 11px; line-height: 1.45;">
+          Read-only event-day monitor: checks the 13:30 Technology selloff-rebound trigger with volume acceleration, ranks by distance to day low, and exports top20/top25 evidence. No orders are placed.
+        </div>
+      </div>
+      <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+        <input type="date" id="r33-shadow-date" title="Optional. Leave blank to use the latest available 13:30 scan date." style="max-width: 150px;">
+        <button class="small" id="r33-shadow-run" type="button" title="Run Rule033 live-shadow monitor for the selected/latest date and create an evidence ZIP.">run Rule033 shadow now ▶</button>
+      </div>
+    </div>
+    <div id="r33-shadow-status" style="display:none; margin-top: 8px; color: var(--text-dim); font-size: 11px; font-family: var(--mono);"></div>
+  </div>
+
+
+  <div style="margin-top: 10px; margin-bottom: 12px; padding: 10px 12px; border: 1px dashed var(--border-strong); background: var(--bg);">
+    <div style="display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap;">
+      <div>
+        <div style="color: var(--accent); font-family: var(--serif); font-style: italic; font-size: 13px; margin-bottom: 2px;">Rule034 conservative live-shadow monitor</div>
+        <div style="color: var(--text-faint); font-size: 11px; line-height: 1.45;">
+          Read-only conservative event-day monitor: checks Rule033 plus gap_filled == 0 and ATR reach <= 10, ranks by distance to day low, and exports top20 evidence. No orders are placed.
+        </div>
+      </div>
+      <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center;">
+        <input type="date" id="r34-shadow-date" title="Optional. Leave blank to use the latest available 13:30 scan date." style="max-width: 150px;">
+        <button class="small" id="r34-shadow-run" type="button" title="Run Rule034 conservative live-shadow monitor for the selected/latest date and create an evidence ZIP.">run Rule034 shadow now ▶</button>
+      </div>
+    </div>
+    <div id="r34-shadow-status" style="display:none; margin-top: 8px; color: var(--text-dim); font-size: 11px; font-family: var(--mono);"></div>
   </div>
   <div class="row">
     <label title="Upload either a bare rule bundle or a full backtest preset JSON. A preset can populate rule, TP/SL, dates, filter mode, min exit delay, JIT and conditional exits.">backtest preset / rule bundle (json)</label>
@@ -1950,9 +2004,11 @@ function _rule009MomentumStrategyPreset(topK=10) {
       predicates: [
         {feature: "minutes_since_open", op: "==", value: 60},
         {feature: "spy_vol", op: ">=", value: 0.005},
-        {feature: "spy_momentum", op: ">=", value: 0}
+        {feature: "spy_momentum", op: ">=", value: 0},
+        {feature: "gap_pct", op: "<=", value: 0},
+        {feature: "range_expansion", op: ">=", value: 1.0}
       ],
-      notes: "Validated high-volatility 10:30 Technology opportunity mode. Rank qualifying symbols by momentum descending and keep top " + k + " per day."
+      notes: "Validated refined high-volatility 10:30 Technology opportunity mode: SPY vol/momentum alignment, non-gap-up symbols, and range expansion. Rank qualifying symbols by momentum descending and keep top " + k + " per day."
     },
     tp_bps: 100,
     sl_bps: 200,
@@ -1973,9 +2029,9 @@ function _rule009MomentumStrategyPreset(topK=10) {
 
 function _loadRule009MomentumStrategy(topK=10, runNow=false) {
   const preset = _rule009MomentumStrategyPreset(topK);
-  _applyBacktestPreset(preset, "validated Rule009 top" + (Number(topK) === 20 ? 20 : 10) + " strategy");
+  _applyBacktestPreset(preset, "validated Rule009 refined top" + (Number(topK) === 20 ? 20 : 10) + " strategy");
   _btStatus("Loaded validated Rule 009 top " + (Number(topK) === 20 ? 20 : 10) + "/day by momentum. Review settings, then run backtest.", "ok");
-  toast("Rule009 top" + (Number(topK) === 20 ? 20 : 10) + " loaded", "ok");
+  toast("Rule009 refined top" + (Number(topK) === 20 ? 20 : 10) + " loaded", "ok");
   if (runNow) setTimeout(() => document.getElementById("bt-run").click(), 100);
 }
 
@@ -2026,6 +2082,276 @@ async function _runRule009ShadowNow() {
 }
 const _r9ShadowRun = document.getElementById("r9-shadow-run");
 if (_r9ShadowRun) _r9ShadowRun.onclick = _runRule009ShadowNow;
+
+
+function _rule029PullbackReclaimPreset(topK=3) {
+  const k = Number(topK) || 3;
+  return {
+    preset_type: "tech_collector_backtest_preset",
+    preset_version: 1,
+    label: "rule029_1030_pullback_reclaim_atrreach_low_top" + k + "_tp" + (k <= 3 ? 100 : 125) + "_sl" + (k <= 3 ? 200 : 250) + "_slip25",
+    rule: {
+      id: "tech_rule_029_live_shadow_primary_top3_atrreach_low",
+      sector: "Information Technology",
+      target: "target",
+      predicates: [
+        {feature: "minutes_since_open", op: "==", value: 60},
+        {feature: "spy_vol", op: ">=", value: 0.005},
+        {feature: "spy_momentum", op: ">=", value: 0},
+        {feature: "distance_to_vwap", op: "<", value: 0},
+        {feature: "distance_to_vwap", op: ">=", value: -0.0042402661},
+        {feature: "vwap_slope", op: ">", value: 0}
+      ],
+      notes: "Rule029 10:30 Technology pullback/reclaim live-shadow candidate. Rank qualifying symbols by atr_reach ascending. Top3 is primary; top10 is capacity-watch only."
+    },
+    tp_bps: k <= 3 ? 100 : 125,
+    sl_bps: k <= 3 ? 200 : 250,
+    timestop_et: "15:50",
+    slippage_bps: 25,
+    start_date: "2024-04-22",
+    end_date: "2026-04-17",
+    filter_mode: "standard",
+    entry_delay_minutes: 1,
+    min_exit_minutes: 1,
+    max_signals_per_day: k,
+    rank_feature: "atr_reach",
+    rank_direction: "asc",
+    just_in_time_backfill: true,
+    conditional_exits: []
+  };
+}
+
+function _loadRule029PullbackReclaimStrategy(topK=3, runNow=false) {
+  const preset = _rule029PullbackReclaimPreset(topK);
+  _applyBacktestPreset(preset, "Rule029 top" + topK + " pullback/reclaim strategy");
+  _btStatus("Loaded Rule 029 top " + topK + "/day ATR-low pullback/reclaim strategy. Top3 is live-shadow primary; top10 is capacity-watch only.", "ok");
+  toast("Rule029 top" + topK + " loaded", "ok");
+  if (runNow) setTimeout(() => document.getElementById("bt-run").click(), 100);
+}
+
+const _r29t3Load = document.getElementById("bt-strategy-rule029-top3-load");
+if (_r29t3Load) _r29t3Load.onclick = () => _loadRule029PullbackReclaimStrategy(3, false);
+const _r29t3Run = document.getElementById("bt-strategy-rule029-top3-run");
+if (_r29t3Run) _r29t3Run.onclick = () => _loadRule029PullbackReclaimStrategy(3, true);
+
+async function _runRule029ShadowNow() {
+  const out = document.getElementById("r29-shadow-status");
+  out.style.display = "block";
+  out.textContent = "running Rule029 shadow monitor...";
+  const dateVal = (document.getElementById("r29-shadow-date").value || "").trim();
+  const body = {
+    date: dateVal || null,
+    sector: "Information Technology",
+    top_ks: [3, 10],
+    evaluate: true,
+    just_in_time_backfill: true,
+    slippage_bps: 25
+  };
+  try {
+    const r = await api("/rule029/shadow/run", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(JSON.stringify(j));
+    out.textContent = JSON.stringify({
+      status: j.status,
+      date: j.date,
+      active: j.active,
+      total_candidates_before_rank_cap: j.total_candidates_before_rank_cap,
+      rule009_candidates_before_rank_cap: j.comparison_rule009 && j.comparison_rule009.rule009_candidates_before_rank_cap,
+      overlaps: j.overlaps || [],
+      pack_filename: j.pack_filename,
+      evaluations: (j.evaluations || []).map(e => ({top_k: e.top_k, comparison: e.comparison, profile: e.profile, status: e.status, avg_net_bps_per_trade: e.summary && e.summary.avg_net_bps_per_trade, n_trades: e.summary && e.summary.n_trades}))
+    }, null, 2);
+    toast("Rule029 shadow pack created", "ok");
+    refreshPacks();
+  } catch (e) {
+    out.textContent = "Rule029 shadow failed: " + e.message;
+    toast("Rule029 shadow failed", "err");
+  }
+}
+const _r29ShadowRun = document.getElementById("r29-shadow-run");
+if (_r29ShadowRun) _r29ShadowRun.onclick = _runRule029ShadowNow;
+
+
+function _rule033SelloffReboundPreset(topK=20) {
+  const k = Number(topK) || 20;
+  return {
+    preset_type: "tech_collector_backtest_preset",
+    preset_version: 1,
+    label: "rule033_1330_selloff_rebound_volume_accel_top" + k + "_tp100_sl200_slip20",
+    rule: {
+      id: "tech_rule_033_1330_selloff_rebound_volume_accel",
+      sector: "Information Technology",
+      target: "target",
+      predicates: [
+        {feature: "minutes_since_open", op: "==", value: 240},
+        {feature: "spy_ret", op: "<=", value: -0.0086881596898112},
+        {feature: "momentum", op: "<=", value: -0.00135528523765575},
+        {feature: "atr_reach", op: "<=", value: 13.0},
+        {feature: "volume_acceleration", op: ">=", value: 1.0}
+      ],
+      notes: "Validated 13:30 Technology selloff-event rebound monitor. Rank qualifying symbols by distance_to_day_low descending and keep top " + k + " per day. Event-day monitor only, not a daily scanner."
+    },
+    tp_bps: 100,
+    sl_bps: 200,
+    timestop_et: "15:50",
+    slippage_bps: 20,
+    start_date: "2024-04-22",
+    end_date: "2026-04-17",
+    filter_mode: "standard",
+    entry_delay_minutes: 1,
+    min_exit_minutes: 1,
+    max_signals_per_day: k,
+    rank_feature: "distance_to_day_low",
+    rank_direction: "desc",
+    just_in_time_backfill: true,
+    conditional_exits: []
+  };
+}
+
+function _loadRule033SelloffReboundStrategy(topK=20, runNow=false) {
+  const preset = _rule033SelloffReboundPreset(topK);
+  _applyBacktestPreset(preset, "validated Rule033 top" + topK + " event-day strategy");
+  _btStatus("Loaded validated Rule 033 top " + topK + "/day selloff-rebound strategy. Review settings, then run backtest.", "ok");
+  toast("Rule033 top" + topK + " loaded", "ok");
+  if (runNow) setTimeout(() => document.getElementById("bt-run").click(), 100);
+}
+
+const _r33t20Load = document.getElementById("bt-strategy-rule033-top20-load");
+if (_r33t20Load) _r33t20Load.onclick = () => _loadRule033SelloffReboundStrategy(20, false);
+const _r33t20Run = document.getElementById("bt-strategy-rule033-top20-run");
+if (_r33t20Run) _r33t20Run.onclick = () => _loadRule033SelloffReboundStrategy(20, true);
+
+async function _runRule033ShadowNow() {
+  const out = document.getElementById("r33-shadow-status");
+  out.style.display = "block";
+  out.textContent = "running Rule033 shadow monitor...";
+  const dateVal = (document.getElementById("r33-shadow-date").value || "").trim();
+  const body = {
+    date: dateVal || null,
+    sector: "Information Technology",
+    top_ks: [20, 25],
+    evaluate: true,
+    just_in_time_backfill: true,
+    slippage_bps: 20
+  };
+  try {
+    const r = await api("/rule033/shadow/run", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(JSON.stringify(j));
+    out.textContent = JSON.stringify({
+      status: j.status,
+      date: j.date,
+      active: j.active,
+      total_candidates_before_rank_cap: j.total_candidates_before_rank_cap,
+      pack_filename: j.pack_filename,
+      evaluations: (j.evaluations || []).map(e => ({top_k: e.top_k, status: e.status, avg_net_bps_per_trade: e.summary && e.summary.avg_net_bps_per_trade, n_trades: e.summary && e.summary.n_trades}))
+    }, null, 2);
+    toast("Rule033 shadow pack created", "ok");
+    refreshPacks();
+  } catch (e) {
+    out.textContent = "Rule033 shadow failed: " + e.message;
+    toast("Rule033 shadow failed", "err");
+  }
+}
+const _r33ShadowRun = document.getElementById("r33-shadow-run");
+if (_r33ShadowRun) _r33ShadowRun.onclick = _runRule033ShadowNow;
+function _rule034ConservativePreset(topK=20) {
+  const k = Number(topK) || 20;
+  return {
+    preset_type: "tech_collector_backtest_preset",
+    preset_version: 1,
+    label: "rule034_1330_conservative_gapfilled0_atrreach10_top" + k + "_tp100_sl200_slip20",
+    rule: {
+      id: "tech_rule_034_rule033_gapfilled0_atrreach10_conservative",
+      sector: "Information Technology",
+      target: "target",
+      predicates: [
+        {feature: "minutes_since_open", op: "==", value: 240},
+        {feature: "spy_ret", op: "<=", value: -0.0086881596898112},
+        {feature: "momentum", op: "<=", value: -0.00135528523765575},
+        {feature: "atr_reach", op: "<=", value: 10.0},
+        {feature: "volume_acceleration", op: ">=", value: 1.0},
+        {feature: "gap_filled", op: "==", value: 0}
+      ],
+      notes: "Conservative Rule033 miss-exclusion variant. Rank qualifying symbols by distance_to_day_low descending and keep top " + k + " per day. Event-day monitor only, not a daily scanner."
+    },
+    tp_bps: 100,
+    sl_bps: 200,
+    timestop_et: "15:50",
+    slippage_bps: 20,
+    start_date: "2024-04-22",
+    end_date: "2026-04-17",
+    filter_mode: "standard",
+    entry_delay_minutes: 1,
+    min_exit_minutes: 1,
+    max_signals_per_day: k,
+    rank_feature: "distance_to_day_low",
+    rank_direction: "desc",
+    just_in_time_backfill: true,
+    conditional_exits: []
+  };
+}
+
+function _loadRule034ConservativeStrategy(topK=20, runNow=false) {
+  const preset = _rule034ConservativePreset(topK);
+  _applyBacktestPreset(preset, "validated Rule034 conservative top" + topK + " event-day strategy");
+  _btStatus("Loaded validated Rule 034 conservative top " + topK + "/day miss-exclusion strategy. Review settings, then run backtest.", "ok");
+  toast("Rule034 conservative top" + topK + " loaded", "ok");
+  if (runNow) setTimeout(() => document.getElementById("bt-run").click(), 100);
+}
+
+const _r34t20Load = document.getElementById("bt-strategy-rule034-top20-load");
+if (_r34t20Load) _r34t20Load.onclick = () => _loadRule034ConservativeStrategy(20, false);
+const _r34t20Run = document.getElementById("bt-strategy-rule034-top20-run");
+if (_r34t20Run) _r34t20Run.onclick = () => _loadRule034ConservativeStrategy(20, true);
+
+async function _runRule034ShadowNow() {
+  const out = document.getElementById("r34-shadow-status");
+  out.style.display = "block";
+  out.textContent = "running Rule034 conservative shadow monitor...";
+  const dateVal = (document.getElementById("r34-shadow-date").value || "").trim();
+  const body = {
+    date: dateVal || null,
+    sector: "Information Technology",
+    top_ks: [20],
+    evaluate: true,
+    just_in_time_backfill: true,
+    slippage_bps: 20
+  };
+  try {
+    const r = await api("/rule034/shadow/run", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(JSON.stringify(j));
+    out.textContent = JSON.stringify({
+      status: j.status,
+      date: j.date,
+      active: j.active,
+      total_candidates_before_rank_cap: j.total_candidates_before_rank_cap,
+      pack_filename: j.pack_filename,
+      evaluations: (j.evaluations || []).map(e => ({top_k: e.top_k, status: e.status, avg_net_bps_per_trade: e.summary && e.summary.avg_net_bps_per_trade, n_trades: e.summary && e.summary.n_trades}))
+    }, null, 2);
+    toast("Rule034 conservative shadow pack created", "ok");
+    refreshPacks();
+  } catch (e) {
+    out.textContent = "Rule034 conservative shadow failed: " + e.message;
+    toast("Rule034 conservative shadow failed", "err");
+  }
+}
+const _r34ShadowRun = document.getElementById("r34-shadow-run");
+if (_r34ShadowRun) _r34ShadowRun.onclick = _runRule034ShadowNow;
+
 
 document.getElementById("bt-download-preset").onclick = async () => {
 

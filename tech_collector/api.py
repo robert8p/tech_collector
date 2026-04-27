@@ -1741,7 +1741,7 @@ def backtest_list(limit: int = 50):
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# Rule009 live-shadow monitor (v0.7.25)
+# Rule009 refined live-shadow monitor (v0.7.26)
 # ---------------------------------------------------------------------------
 class Rule009ShadowRequest(BaseModel):
     """Run the promoted Rule009 candidate in shadow/monitor mode.
@@ -1774,8 +1774,10 @@ def _rule009_rule_dict() -> dict:
             {"feature": "minutes_since_open", "op": "==", "value": 60},
             {"feature": "spy_vol", "op": ">=", "value": 0.005},
             {"feature": "spy_momentum", "op": ">=", "value": 0},
+            {"feature": "gap_pct", "op": "<=", "value": 0},
+            {"feature": "range_expansion", "op": ">=", "value": 1.0},
         ],
-        "notes": "Promoted high-volatility 10:30 Technology opportunity mode.",
+        "notes": "Promoted refined high-volatility 10:30 Technology opportunity mode: SPY vol/momentum, gap_pct <= 0, range_expansion >= 1.0.",
     }
 
 
@@ -1805,13 +1807,15 @@ def _rule009_candidates_for_date(sector: str, date: str) -> pd.DataFrame:
         return df
     # Use only scan-time-available fields. Do NOT require target to be non-null;
     # live shadow rows may be unresolved intraday.
-    for col in ["spy_vol", "spy_momentum", "momentum"]:
+    for col in ["spy_vol", "spy_momentum", "momentum", "gap_pct", "range_expansion"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     mask = (
         (df.get("scan_time_et") == "10:30")
         & (df.get("spy_vol") >= 0.005)
         & (df.get("spy_momentum") >= 0)
+        & (df.get("gap_pct") <= 0)
+        & (df.get("range_expansion") >= 1.0)
     )
     out = df[mask].copy()
     if out.empty:
@@ -1832,7 +1836,7 @@ def _shadow_export_rows(df: pd.DataFrame, top_k: int | None = None) -> list[dict
         "date", "symbol", "scan_time_et", "minutes_since_open", "scan_price",
         "spy_vol", "spy_momentum", "momentum", "ret_vs_spy", "mom_vs_spy",
         "relative_volume", "distance_to_vwap", "intraday_range_position",
-        "open_to_scan_return", "gap_pct", "rsi_14", "ema_20_distance",
+        "open_to_scan_return", "gap_pct", "range_expansion", "rsi_14", "ema_20_distance",
         "sector_breadth_up", "new_highs_in_sector", "rule009_rank_by_momentum",
         "target", "return_to_cutoff", "target_50bps", "target_peak_50bps",
     ]
@@ -1850,7 +1854,7 @@ def _shadow_export_rows(df: pd.DataFrame, top_k: int | None = None) -> list[dict
                 pass
             row[c] = v
         row["planned_entry_time_et"] = "10:31"
-        row["strategy_id"] = "tech_rule_009_ranked_momentum_top10_or_top20"
+        row["strategy_id"] = "tech_rule_009_refined_gap_range_momentum_top10_or_top20"
         rows.append(row)
     return rows
 
@@ -1902,15 +1906,15 @@ def rule009_shadow_run(req: Rule009ShadowRequest):
         "kind": "rule009_shadow_monitor",
         "version": config.APP_VERSION,
         "generated_at_utc": generated_at,
-        "strategy_id": "tech_rule_009_ranked_momentum",
+        "strategy_id": "tech_rule_009_refined_gap_range_momentum",
         "date": date,
         "sector": sector,
         "active": active,
         "status": "active" if active else "inactive",
         "reason": (
-            "Rule009 conditions met: 10:30 Technology rows with spy_vol >= 0.005 and spy_momentum >= 0."
+            "Rule009 refined conditions met: 10:30 Technology rows with spy_vol >= 0.005, spy_momentum >= 0, gap_pct <= 0, and range_expansion >= 1.0."
             if active else
-            "Rule009 inactive for this date: no 10:30 Technology rows met spy_vol >= 0.005 and spy_momentum >= 0."
+            "Rule009 refined inactive for this date: no 10:30 Technology rows met spy_vol >= 0.005, spy_momentum >= 0, gap_pct <= 0, and range_expansion >= 1.0."
         ),
         "total_candidates_before_rank_cap": total_candidates,
         "selection": {
@@ -2002,6 +2006,892 @@ def rule009_shadow_run(req: Rule009ShadowRequest):
         "top10_preview": _shadow_export_rows(candidates, 10),
     })
     return manifest
+
+
+
+
+
+# ---------------------------------------------------------------------------
+# Rule029 live-shadow monitor (v0.7.28)
+# ---------------------------------------------------------------------------
+class Rule029ShadowRequest(BaseModel):
+    """Run validated Rule029 candidate in shadow/monitor mode.
+
+    Rule029 is deliberately decision-support only: a 10:30 Technology
+    event-day pullback/reclaim setup. It exports ranked candidates, compares
+    overlap with Rule009, and optionally audits the same path-dependent TP/SL
+    mechanics used by the backtest engine.
+    """
+    date: str | None = Field(
+        default=None,
+        description="YYYY-MM-DD. If omitted, uses the latest available 10:30 Information Technology scan date.",
+    )
+    sector: str = Field(default="Information Technology")
+    top_ks: list[int] = Field(default_factory=lambda: [3, 10])
+    evaluate: bool = Field(
+        default=True,
+        description="If True, attempt path-dependent outcome evaluation using available raw bars.",
+    )
+    just_in_time_backfill: bool = Field(default=True)
+    slippage_bps: float = Field(default=25.0, ge=0.0, le=100.0)
+
+
+RULE029_SPY_VOL_MIN = 0.005
+RULE029_SPY_MOMENTUM_MIN = 0.0
+RULE029_DISTANCE_TO_VWAP_MIN = -0.0042402661
+RULE029_DISTANCE_TO_VWAP_MAX = 0.0
+RULE029_VWAP_SLOPE_MIN = 0.0
+
+
+def _rule029_rule_dict() -> dict:
+    return {
+        "id": "tech_rule_029_live_shadow_primary_top3_atrreach_low",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+            {"feature": "minutes_since_open", "op": "==", "value": 60},
+            {"feature": "spy_vol", "op": ">=", "value": RULE029_SPY_VOL_MIN},
+            {"feature": "spy_momentum", "op": ">=", "value": RULE029_SPY_MOMENTUM_MIN},
+            {"feature": "distance_to_vwap", "op": "<", "value": RULE029_DISTANCE_TO_VWAP_MAX},
+            {"feature": "distance_to_vwap", "op": ">=", "value": RULE029_DISTANCE_TO_VWAP_MIN},
+            {"feature": "vwap_slope", "op": ">", "value": RULE029_VWAP_SLOPE_MIN},
+        ],
+        "notes": (
+            "Rule029 live-shadow candidate: 10:30 Technology event-day pullback/reclaim. "
+            "SPY volatility and momentum are supportive; price is below but not far below VWAP; "
+            "VWAP slope is positive. Rank qualifying symbols by atr_reach ascending. "
+            "Primary live-shadow profile keeps top 3 per day."
+        ),
+    }
+
+
+def _latest_rule029_scan_date(sector: str) -> str | None:
+    with storage.connect(config.DB_PATH) as conn:
+        row = conn.execute(
+            """
+            SELECT MAX(date) AS latest_date
+            FROM research_rows
+            WHERE sector = ? AND scan_time_et = '10:30'
+            """,
+            (sector,),
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        return row["latest_date"]
+    except Exception:
+        return row[0]
+
+
+def _rule029_candidates_for_date(sector: str, date: str) -> pd.DataFrame:
+    df = rule_tester.load_scan_rows_from_db(
+        config.DB_PATH, sector, start_date=date, end_date=date,
+    )
+    if df.empty:
+        return df
+    # Use only scan-time-available fields. Do NOT require target to be non-null;
+    # live shadow rows may be unresolved intraday.
+    numeric_cols = [
+        "spy_vol", "spy_momentum", "distance_to_vwap", "vwap_slope",
+        "atr_reach", "momentum", "ret_vs_spy", "mom_vs_spy",
+        "relative_volume", "intraday_range_position", "open_to_scan_return",
+        "gap_pct", "rsi_14", "ema_20_distance", "sector_breadth_up",
+        "new_highs_in_sector", "target", "return_to_cutoff",
+        "target_50bps", "target_peak_50bps",
+    ]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    mask = (
+        (df.get("scan_time_et") == "10:30")
+        & (df.get("spy_vol") >= RULE029_SPY_VOL_MIN)
+        & (df.get("spy_momentum") >= RULE029_SPY_MOMENTUM_MIN)
+        & (df.get("distance_to_vwap") < RULE029_DISTANCE_TO_VWAP_MAX)
+        & (df.get("distance_to_vwap") >= RULE029_DISTANCE_TO_VWAP_MIN)
+        & (df.get("vwap_slope") > RULE029_VWAP_SLOPE_MIN)
+    )
+    out = df[mask].copy()
+    if out.empty:
+        return out
+    out["_rank_value"] = pd.to_numeric(out.get("atr_reach"), errors="coerce").fillna(float("inf"))
+    out = out.sort_values(["_rank_value", "symbol"], ascending=[True, True]).copy()
+    out["rule029_rank_by_atr_reach_low"] = range(1, len(out) + 1)
+    out = out.drop(columns=["_rank_value"], errors="ignore")
+    return out
+
+
+def _rule029_shadow_export_rows(df: pd.DataFrame, top_k: int | None = None) -> list[dict]:
+    if df.empty:
+        return []
+    if top_k is not None:
+        df = df.head(int(top_k)).copy()
+    keep_cols = [
+        "date", "symbol", "scan_time_et", "minutes_since_open", "scan_price",
+        "spy_vol", "spy_momentum", "distance_to_vwap", "vwap_slope", "atr_reach",
+        "momentum", "ret_vs_spy", "mom_vs_spy", "relative_volume",
+        "intraday_range_position", "open_to_scan_return", "gap_pct", "rsi_14",
+        "ema_20_distance", "sector_breadth_up", "new_highs_in_sector",
+        "rule029_rank_by_atr_reach_low", "target", "return_to_cutoff",
+        "target_50bps", "target_peak_50bps",
+    ]
+    rows = []
+    for _, r in df.iterrows():
+        row = {}
+        for c in keep_cols:
+            if c not in df.columns:
+                continue
+            v = r.get(c)
+            try:
+                if pd.isna(v):
+                    v = None
+            except Exception:
+                pass
+            row[c] = v
+        row["planned_entry_time_et"] = "10:31"
+        row["strategy_id"] = "tech_rule_029_live_shadow_primary_top3_atrreach_low"
+        rows.append(row)
+    return rows
+
+
+def _overlap_rows(left: pd.DataFrame, right: pd.DataFrame, left_name: str, right_name: str) -> list[dict]:
+    if left.empty or right.empty:
+        return []
+    l = left[["date", "symbol"]].copy()
+    r = right[["date", "symbol"]].copy()
+    merged = l.merge(r, on=["date", "symbol"], how="inner")
+    rows = []
+    for _, row in merged.iterrows():
+        rows.append({"date": row["date"], "symbol": row["symbol"], "left": left_name, "right": right_name})
+    return rows
+
+
+@app.post("/rule029/shadow/run", dependencies=[Depends(_require_api_key)])
+def rule029_shadow_run(req: Rule029ShadowRequest):
+    """Run Rule029 in shadow mode and export a daily evidence ZIP.
+
+    This endpoint is intentionally safe: it does not place orders, it only
+    reads scan rows and optionally runs the existing historical outcome engine
+    when sufficient bars/outcomes are available. The pack includes a Rule009
+    comparison and date-symbol overlap so Rule029 can be monitored as a
+    complementary candidate instead of a duplicate of Rule009.
+    """
+    sector = _resolve_sector(req.sector)
+    date = req.date or _latest_rule029_scan_date(sector)
+    if not date:
+        raise HTTPException(status_code=404, detail="No 10:30 scan rows found for Rule029 shadow monitor")
+
+    candidates = _rule029_candidates_for_date(sector, date)
+    rule009_candidates = _rule009_candidates_for_date(sector, date)
+    active = not candidates.empty
+    total_candidates = int(len(candidates))
+    top_ks = sorted({max(1, min(100, int(k))) for k in (req.top_ks or [3, 10])})
+
+    safe_date = str(date).replace("/", "-")
+    generated_at = datetime.now(timezone.utc).isoformat()
+    pack_stem = f"rule029_shadow_{safe_date}_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    pack_dir = Path(config.EVIDENCE_PACK_DIR)
+    work_dir = pack_dir / pack_stem
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest = {
+        "kind": "rule029_shadow_monitor",
+        "version": config.APP_VERSION,
+        "generated_at_utc": generated_at,
+        "strategy_id": "tech_rule_029_live_shadow_primary_top3_atrreach_low",
+        "date": date,
+        "sector": sector,
+        "active": active,
+        "status": "active" if active else "inactive",
+        "reason": (
+            "Rule029 conditions met: 10:30 Technology pullback/reclaim rows with supportive SPY and positive VWAP slope."
+            if active else
+            "Rule029 inactive for this date: no 10:30 Technology rows met SPY support, VWAP pullback/reclaim, and VWAP-slope conditions."
+        ),
+        "total_candidates_before_rank_cap": total_candidates,
+        "selection": {
+            "rank_feature": "atr_reach",
+            "rank_direction": "asc",
+            "primary_top_k": 3,
+            "top_ks": top_ks,
+        },
+        "rule": _rule029_rule_dict(),
+        "comparison_rule009": {
+            "strategy_id": "tech_rule_009_1030_spyvol005_spymom_pos",
+            "rule009_candidates_before_rank_cap": int(len(rule009_candidates)),
+            "rule009_top10_preview_count": int(min(10, len(rule009_candidates))),
+        },
+        "execution_reference": {
+            "entry_delay_minutes": 1,
+            "planned_entry_time_et": "10:31",
+            "primary_tp_bps": 100,
+            "primary_sl_bps": 200,
+            "capacity_watch_tp_bps": 125,
+            "capacity_watch_sl_bps": 250,
+            "slippage_bps": req.slippage_bps,
+            "min_exit_minutes": 1,
+            "timestop_et": "15:50",
+        },
+        "evidence_note": (
+            "Rule029 is a controlled live-shadow candidate, not production-proven and not a generic daily scanner. "
+            "Primary evidence is top3 ATR-low; top10 is capacity-watch only. No orders are placed."
+        ),
+        "outputs": [],
+        "evaluations": [],
+        "overlaps": [],
+    }
+
+    all_rows = _rule029_shadow_export_rows(candidates, None)
+    all_csv = work_dir / "rule029_all_candidates.csv"
+    _write_dict_rows_csv(all_csv, all_rows)
+    manifest["outputs"].append(all_csv.name)
+
+    r9_top10_rows = _shadow_export_rows(rule009_candidates, 10)
+    r9_csv = work_dir / "rule009_top10_comparison_candidates.csv"
+    _write_dict_rows_csv(r9_csv, r9_top10_rows)
+    manifest["outputs"].append(r9_csv.name)
+
+    for k in top_ks:
+        rows = _rule029_shadow_export_rows(candidates, k)
+        fn = work_dir / f"rule029_top{k}_candidates.csv"
+        _write_dict_rows_csv(fn, rows)
+        manifest["outputs"].append(fn.name)
+
+        overlap = _overlap_rows(candidates.head(k), rule009_candidates.head(10), f"rule029_top{k}", "rule009_top10")
+        overlap_fn = work_dir / f"rule029_top{k}_overlap_with_rule009_top10.csv"
+        _write_dict_rows_csv(overlap_fn, overlap)
+        manifest["outputs"].append(overlap_fn.name)
+        manifest["overlaps"].append({"top_k": k, "rule009_top10_overlap_count": len(overlap)})
+
+        if active and req.evaluate:
+            try:
+                primary = int(k) <= 3
+                normalised = {
+                    "rule": _rule029_rule_dict(),
+                    "tp_bps": 100 if primary else 125,
+                    "sl_bps": 200 if primary else 250,
+                    "timestop_et": "15:50",
+                    "slippage_bps": req.slippage_bps,
+                    "start_date": date,
+                    "end_date": date,
+                    "filter_mode": "standard",
+                    "entry_delay_minutes": 1,
+                    "min_exit_minutes": 1,
+                    "max_signals_per_day": k,
+                    "rank_feature": "atr_reach",
+                    "rank_direction": "asc",
+                    "just_in_time_backfill": req.just_in_time_backfill,
+                    "conditional_exits": [],
+                }
+                bt_req = BacktestRunRequest.model_validate(normalised)
+                summary = _execute_backtest_request(bt_req)
+                eval_item = {
+                    "top_k": k,
+                    "profile": "primary_top3_tp100_sl200" if primary else "capacity_watch_top10_tp125_sl250",
+                    "status": "succeeded" if not summary.get("error") else "no_signals_or_unresolved",
+                    "summary": summary,
+                }
+                trades_name = summary.get("trades_csv_filename")
+                if trades_name:
+                    src = Path(config.EVIDENCE_PACK_DIR) / trades_name
+                    if src.exists():
+                        dst = work_dir / f"rule029_top{k}_shadow_trades.csv"
+                        dst.write_bytes(src.read_bytes())
+                        eval_item["trades_csv"] = dst.name
+                        manifest["outputs"].append(dst.name)
+                manifest["evaluations"].append(eval_item)
+            except Exception as e:
+                manifest["evaluations"].append({
+                    "top_k": k,
+                    "status": "failed",
+                    "error": f"{type(e).__name__}: {e}",
+                    "note": "This can be normal for unresolved live same-day rows; candidate CSVs are still valid.",
+                })
+
+    # Same-date Rule009 audit for direct context. Kept separate from Rule029;
+    # failures here should not invalidate the Rule029 candidate CSVs.
+    if not rule009_candidates.empty and req.evaluate:
+        try:
+            bt_req = BacktestRunRequest.model_validate({
+                "rule": _rule009_rule_dict(),
+                "tp_bps": 100,
+                "sl_bps": 200,
+                "timestop_et": "15:50",
+                "slippage_bps": req.slippage_bps,
+                "start_date": date,
+                "end_date": date,
+                "filter_mode": "standard",
+                "entry_delay_minutes": 1,
+                "min_exit_minutes": 1,
+                "max_signals_per_day": 10,
+                "rank_feature": "momentum",
+                "rank_direction": "desc",
+                "just_in_time_backfill": req.just_in_time_backfill,
+                "conditional_exits": [],
+            })
+            summary = _execute_backtest_request(bt_req)
+            eval_item = {
+                "comparison": "rule009_top10_same_date",
+                "status": "succeeded" if not summary.get("error") else "no_signals_or_unresolved",
+                "summary": summary,
+            }
+            trades_name = summary.get("trades_csv_filename")
+            if trades_name:
+                src = Path(config.EVIDENCE_PACK_DIR) / trades_name
+                if src.exists():
+                    dst = work_dir / "rule009_top10_comparison_shadow_trades.csv"
+                    dst.write_bytes(src.read_bytes())
+                    eval_item["trades_csv"] = dst.name
+                    manifest["outputs"].append(dst.name)
+            manifest["evaluations"].append(eval_item)
+        except Exception as e:
+            manifest["evaluations"].append({
+                "comparison": "rule009_top10_same_date",
+                "status": "failed",
+                "error": f"{type(e).__name__}: {e}",
+            })
+
+    manifest_path = work_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, default=str), encoding="utf-8")
+    manifest["outputs"].append(manifest_path.name)
+
+    zip_filename = f"{pack_stem}.zip"
+    zip_path = pack_dir / zip_filename
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for child in sorted(work_dir.iterdir()):
+            if child.is_file():
+                zf.write(child, arcname=child.name)
+
+    manifest.update({
+        "pack_filename": zip_filename,
+        "pack_url": f"/packs/{zip_filename}",
+        "top3_preview": _rule029_shadow_export_rows(candidates, 3),
+    })
+    return manifest
+
+# ---------------------------------------------------------------------------
+# Rule033 live-shadow monitor (v0.7.26)
+# ---------------------------------------------------------------------------
+class Rule033ShadowRequest(BaseModel):
+    """Run promoted Rule033 candidate in shadow/monitor mode.
+
+    Rule033 is deliberately decision-support only: a 13:30 Technology
+    selloff-event rebound monitor with volume confirmation. It exports ranked
+    candidates and, when historical/outcome bars are available, audits the same
+    path-dependent TP/SL mechanics used by the backtest engine.
+    """
+    date: str | None = Field(
+        default=None,
+        description="YYYY-MM-DD. If omitted, uses the latest available 13:30 Information Technology scan date.",
+    )
+    sector: str = Field(default="Information Technology")
+    top_ks: list[int] = Field(default_factory=lambda: [20, 25])
+    evaluate: bool = Field(
+        default=True,
+        description="If True, attempt path-dependent outcome evaluation using available raw bars.",
+    )
+    just_in_time_backfill: bool = Field(default=True)
+    slippage_bps: float = Field(default=20.0, ge=0.0, le=100.0)
+
+
+RULE033_SPY_RET_MAX = -0.0086881596898112
+RULE033_MOMENTUM_MAX = -0.00135528523765575
+RULE033_ATR_REACH_MAX = 13.0
+RULE033_VOLUME_ACCEL_MIN = 1.0
+
+
+def _rule033_rule_dict() -> dict:
+    return {
+        "id": "tech_rule_033_1330_selloff_rebound_volume_accel",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+            {"feature": "minutes_since_open", "op": "==", "value": 240},
+            {"feature": "spy_ret", "op": "<=", "value": RULE033_SPY_RET_MAX},
+            {"feature": "momentum", "op": "<=", "value": RULE033_MOMENTUM_MAX},
+            {"feature": "atr_reach", "op": "<=", "value": RULE033_ATR_REACH_MAX},
+            {"feature": "volume_acceleration", "op": ">=", "value": RULE033_VOLUME_ACCEL_MIN},
+        ],
+        "notes": (
+            "Promoted 13:30 Technology selloff-event rebound monitor with volume confirmation. "
+            "Rank qualifying symbols by distance_to_day_low descending and keep top 20 per day."
+        ),
+    }
+
+
+def _latest_rule033_scan_date(sector: str) -> str | None:
+    with storage.connect(config.DB_PATH) as conn:
+        row = conn.execute(
+            """
+            SELECT MAX(date) AS latest_date
+            FROM research_rows
+            WHERE sector = ? AND scan_time_et = '13:30'
+            """,
+            (sector,),
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        return row["latest_date"]
+    except Exception:
+        return row[0]
+
+
+def _rule033_candidates_for_date(sector: str, date: str) -> pd.DataFrame:
+    df = rule_tester.load_scan_rows_from_db(
+        config.DB_PATH, sector, start_date=date, end_date=date,
+    )
+    if df.empty:
+        return df
+    # Use only scan-time-available fields. Do NOT require target to be non-null;
+    # live shadow rows may be unresolved intraday.
+    numeric_cols = [
+        "spy_ret", "momentum", "atr_reach", "volume_acceleration",
+        "distance_to_day_low", "intraday_range_position", "relative_volume",
+        "distance_to_vwap", "ret_vs_spy", "mom_vs_spy", "spy_vol",
+        "spy_momentum", "gap_pct", "open_to_scan_return",
+    ]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    mask = (
+        (df.get("scan_time_et") == "13:30")
+        & (df.get("spy_ret") <= RULE033_SPY_RET_MAX)
+        & (df.get("momentum") <= RULE033_MOMENTUM_MAX)
+        & (df.get("atr_reach") <= RULE033_ATR_REACH_MAX)
+        & (df.get("volume_acceleration") >= RULE033_VOLUME_ACCEL_MIN)
+    )
+    out = df[mask].copy()
+    if out.empty:
+        return out
+    out["_rank_value"] = pd.to_numeric(out.get("distance_to_day_low"), errors="coerce").fillna(float("-inf"))
+    out = out.sort_values(["_rank_value", "symbol"], ascending=[False, True]).copy()
+    out["rule033_rank_by_distance_to_day_low"] = range(1, len(out) + 1)
+    out = out.drop(columns=["_rank_value"], errors="ignore")
+    return out
+
+
+def _rule033_shadow_export_rows(df: pd.DataFrame, top_k: int | None = None) -> list[dict]:
+    if df.empty:
+        return []
+    if top_k is not None:
+        df = df.head(int(top_k)).copy()
+    keep_cols = [
+        "date", "symbol", "scan_time_et", "minutes_since_open", "scan_price",
+        "spy_ret", "spy_vol", "spy_momentum", "momentum", "atr_reach",
+        "volume_acceleration", "distance_to_day_low", "intraday_range_position",
+        "relative_volume", "distance_to_vwap", "ret_vs_spy", "mom_vs_spy",
+        "open_to_scan_return", "gap_pct", "rsi_14", "ema_20_distance",
+        "sector_breadth_up", "new_highs_in_sector",
+        "rule033_rank_by_distance_to_day_low",
+        "target", "return_to_cutoff", "target_50bps", "target_peak_50bps",
+    ]
+    rows = []
+    for _, r in df.iterrows():
+        row = {}
+        for c in keep_cols:
+            if c not in df.columns:
+                continue
+            v = r.get(c)
+            try:
+                if pd.isna(v):
+                    v = None
+            except Exception:
+                pass
+            row[c] = v
+        row["planned_entry_time_et"] = "13:31"
+        row["strategy_id"] = "tech_rule_033_1330_selloff_rebound_volume_accel_top20"
+        rows.append(row)
+    return rows
+
+
+@app.post("/rule033/shadow/run", dependencies=[Depends(_require_api_key)])
+def rule033_shadow_run(req: Rule033ShadowRequest):
+    """Run Rule033 in shadow mode and export a daily evidence ZIP.
+
+    This endpoint is intentionally safe: it does not place orders, it only
+    reads scan rows and optionally runs the existing historical outcome engine
+    when sufficient bars/outcomes are available.
+    """
+    sector = _resolve_sector(req.sector)
+    date = req.date or _latest_rule033_scan_date(sector)
+    if not date:
+        raise HTTPException(status_code=404, detail="No 13:30 scan rows found for Rule033 shadow monitor")
+
+    candidates = _rule033_candidates_for_date(sector, date)
+    active = not candidates.empty
+    total_candidates = int(len(candidates))
+    top_ks = sorted({max(1, min(100, int(k))) for k in (req.top_ks or [20, 25])})
+
+    safe_date = str(date).replace("/", "-")
+    generated_at = datetime.now(timezone.utc).isoformat()
+    pack_stem = f"rule033_shadow_{safe_date}_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    pack_dir = Path(config.EVIDENCE_PACK_DIR)
+    work_dir = pack_dir / pack_stem
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest = {
+        "kind": "rule033_shadow_monitor",
+        "version": config.APP_VERSION,
+        "generated_at_utc": generated_at,
+        "strategy_id": "tech_rule_033_1330_selloff_rebound_volume_accel",
+        "date": date,
+        "sector": sector,
+        "active": active,
+        "status": "active" if active else "inactive",
+        "reason": (
+            "Rule033 conditions met: 13:30 Technology selloff-rebound rows with volume_acceleration >= 1.0."
+            if active else
+            "Rule033 inactive for this date: no 13:30 Technology rows met spy_ret/momentum/atr_reach/volume_acceleration conditions."
+        ),
+        "total_candidates_before_rank_cap": total_candidates,
+        "selection": {
+            "rank_feature": "distance_to_day_low",
+            "rank_direction": "desc",
+            "primary_top_k": 20,
+            "top_ks": top_ks,
+        },
+        "rule": _rule033_rule_dict(),
+        "execution_reference": {
+            "entry_delay_minutes": 1,
+            "planned_entry_time_et": "13:31",
+            "tp_bps": 100,
+            "sl_bps": 200,
+            "slippage_bps": req.slippage_bps,
+            "min_exit_minutes": 1,
+            "timestop_et": "15:50",
+        },
+        "evidence_note": (
+            "Rule033 is an event-day selloff-rebound monitor, not a generic daily scanner. "
+            "Use packs to observe candidate quality and path-dependent outcomes; do not auto-trade."
+        ),
+        "outputs": [],
+        "evaluations": [],
+    }
+
+    all_rows = _rule033_shadow_export_rows(candidates, None)
+    all_csv = work_dir / "rule033_all_candidates.csv"
+    _write_dict_rows_csv(all_csv, all_rows)
+    manifest["outputs"].append(all_csv.name)
+
+    for k in top_ks:
+        rows = _rule033_shadow_export_rows(candidates, k)
+        fn = work_dir / f"rule033_top{k}_candidates.csv"
+        _write_dict_rows_csv(fn, rows)
+        manifest["outputs"].append(fn.name)
+
+        if active and req.evaluate:
+            try:
+                normalised = {
+                    "rule": _rule033_rule_dict(),
+                    "tp_bps": 100,
+                    "sl_bps": 200,
+                    "timestop_et": "15:50",
+                    "slippage_bps": req.slippage_bps,
+                    "start_date": date,
+                    "end_date": date,
+                    "filter_mode": "standard",
+                    "entry_delay_minutes": 1,
+                    "min_exit_minutes": 1,
+                    "max_signals_per_day": k,
+                    "rank_feature": "distance_to_day_low",
+                    "rank_direction": "desc",
+                    "just_in_time_backfill": req.just_in_time_backfill,
+                    "conditional_exits": [],
+                }
+                bt_req = BacktestRunRequest.model_validate(normalised)
+                summary = _execute_backtest_request(bt_req)
+                eval_item = {
+                    "top_k": k,
+                    "status": "succeeded" if not summary.get("error") else "no_signals_or_unresolved",
+                    "summary": summary,
+                }
+                trades_name = summary.get("trades_csv_filename")
+                if trades_name:
+                    src = Path(config.EVIDENCE_PACK_DIR) / trades_name
+                    if src.exists():
+                        dst = work_dir / f"rule033_top{k}_shadow_trades.csv"
+                        dst.write_bytes(src.read_bytes())
+                        eval_item["trades_csv"] = dst.name
+                        manifest["outputs"].append(dst.name)
+                manifest["evaluations"].append(eval_item)
+            except Exception as e:
+                manifest["evaluations"].append({
+                    "top_k": k,
+                    "status": "failed",
+                    "error": f"{type(e).__name__}: {e}",
+                    "note": "This can be normal for unresolved live same-day rows; candidate CSVs are still valid.",
+                })
+
+    manifest_path = work_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, default=str), encoding="utf-8")
+    manifest["outputs"].append(manifest_path.name)
+
+    zip_filename = f"{pack_stem}.zip"
+    zip_path = pack_dir / zip_filename
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for child in sorted(work_dir.iterdir()):
+            if child.is_file():
+                zf.write(child, arcname=child.name)
+
+    manifest.update({
+        "pack_filename": zip_filename,
+        "pack_url": f"/packs/{zip_filename}",
+        "top20_preview": _rule033_shadow_export_rows(candidates, 20),
+    })
+    return manifest
+# Rule034 live-shadow monitor (v0.7.29)
+# ---------------------------------------------------------------------------
+class Rule034ShadowRequest(BaseModel):
+    """Run conservative Rule034 candidate in shadow/monitor mode.
+
+    Rule034 is the Rule033 miss-exclusion variant:
+    Rule033 + gap_filled == 0 + atr_reach <= 10. It is deliberately
+    decision-support only and exports ranked candidates plus optional
+    path-dependent evaluation when bars are available.
+    """
+    date: str | None = Field(
+        default=None,
+        description="YYYY-MM-DD. If omitted, uses the latest available 13:30 Information Technology scan date.",
+    )
+    sector: str = Field(default="Information Technology")
+    top_ks: list[int] = Field(default_factory=lambda: [20])
+    evaluate: bool = Field(
+        default=True,
+        description="If True, attempt path-dependent outcome evaluation using available raw bars.",
+    )
+    just_in_time_backfill: bool = Field(default=True)
+    slippage_bps: float = Field(default=20.0, ge=0.0, le=100.0)
+
+
+RULE034_ATR_REACH_MAX = 10.0
+RULE034_GAP_FILLED_REQUIRED = 0.0
+
+
+def _rule034_rule_dict() -> dict:
+    return {
+        "id": "tech_rule_034_rule033_gapfilled0_atrreach10_conservative",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+            {"feature": "minutes_since_open", "op": "==", "value": 240},
+            {"feature": "spy_ret", "op": "<=", "value": RULE033_SPY_RET_MAX},
+            {"feature": "momentum", "op": "<=", "value": RULE033_MOMENTUM_MAX},
+            {"feature": "atr_reach", "op": "<=", "value": RULE034_ATR_REACH_MAX},
+            {"feature": "volume_acceleration", "op": ">=", "value": RULE033_VOLUME_ACCEL_MIN},
+            {"feature": "gap_filled", "op": "==", "value": RULE034_GAP_FILLED_REQUIRED},
+        ],
+        "notes": (
+            "Conservative Rule033 miss-exclusion variant. Requires no completed gap fill "
+            "and ATR reach <= 10, then ranks qualifying symbols by distance_to_day_low "
+            "descending and keeps top 20 per day."
+        ),
+    }
+
+
+def _latest_rule034_scan_date(sector: str) -> str | None:
+    # Same scan-time source as Rule033; filtering happens after rows load.
+    return _latest_rule033_scan_date(sector)
+
+
+def _rule034_candidates_for_date(sector: str, date: str) -> pd.DataFrame:
+    df = rule_tester.load_scan_rows_from_db(
+        config.DB_PATH, sector, start_date=date, end_date=date,
+    )
+    if df.empty:
+        return df
+    numeric_cols = [
+        "spy_ret", "momentum", "atr_reach", "volume_acceleration",
+        "gap_filled", "distance_to_day_low", "intraday_range_position",
+        "relative_volume", "distance_to_vwap", "ret_vs_spy", "mom_vs_spy",
+        "spy_vol", "spy_momentum", "gap_pct", "open_to_scan_return",
+        "rsi_14", "sector_breadth_up", "dist_to_20d_high_bps",
+    ]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    mask = (
+        (df.get("scan_time_et") == "13:30")
+        & (df.get("spy_ret") <= RULE033_SPY_RET_MAX)
+        & (df.get("momentum") <= RULE033_MOMENTUM_MAX)
+        & (df.get("atr_reach") <= RULE034_ATR_REACH_MAX)
+        & (df.get("volume_acceleration") >= RULE033_VOLUME_ACCEL_MIN)
+        & (df.get("gap_filled") == RULE034_GAP_FILLED_REQUIRED)
+    )
+    out = df[mask].copy()
+    if out.empty:
+        return out
+    out["_rank_value"] = pd.to_numeric(out.get("distance_to_day_low"), errors="coerce").fillna(float("-inf"))
+    out = out.sort_values(["_rank_value", "symbol"], ascending=[False, True]).copy()
+    out["rule034_rank_by_distance_to_day_low"] = range(1, len(out) + 1)
+    out = out.drop(columns=["_rank_value"], errors="ignore")
+    return out
+
+
+def _rule034_shadow_export_rows(df: pd.DataFrame, top_k: int | None = None) -> list[dict]:
+    if df.empty:
+        return []
+    if top_k is not None:
+        df = df.head(int(top_k)).copy()
+    keep_cols = [
+        "date", "symbol", "scan_time_et", "minutes_since_open", "scan_price",
+        "spy_ret", "spy_vol", "spy_momentum", "momentum", "atr_reach",
+        "volume_acceleration", "gap_filled", "distance_to_day_low",
+        "intraday_range_position", "relative_volume", "distance_to_vwap",
+        "ret_vs_spy", "mom_vs_spy", "open_to_scan_return", "gap_pct", "rsi_14",
+        "ema_20_distance", "sector_breadth_up", "new_highs_in_sector",
+        "dist_to_20d_high_bps", "rule034_rank_by_distance_to_day_low",
+        "target", "return_to_cutoff", "target_50bps", "target_peak_50bps",
+    ]
+    rows = []
+    for _, r in df.iterrows():
+        row = {}
+        for c in keep_cols:
+            if c not in df.columns:
+                continue
+            v = r.get(c)
+            try:
+                if pd.isna(v):
+                    v = None
+            except Exception:
+                pass
+            row[c] = v
+        row["planned_entry_time_et"] = "13:31"
+        row["strategy_id"] = "tech_rule_034_rule033_gapfilled0_atrreach10_conservative_top20"
+        rows.append(row)
+    return rows
+
+
+@app.post("/rule034/shadow/run", dependencies=[Depends(_require_api_key)])
+def rule034_shadow_run(req: Rule034ShadowRequest):
+    """Run conservative Rule034 in shadow mode and export a daily evidence ZIP."""
+    sector = _resolve_sector(req.sector)
+    date = req.date or _latest_rule034_scan_date(sector)
+    if not date:
+        raise HTTPException(status_code=404, detail="No 13:30 scan rows found for Rule034 shadow monitor")
+
+    candidates = _rule034_candidates_for_date(sector, date)
+    active = not candidates.empty
+    total_candidates = int(len(candidates))
+    top_ks = sorted({max(1, min(100, int(k))) for k in (req.top_ks or [20])})
+
+    safe_date = str(date).replace("/", "-")
+    generated_at = datetime.now(timezone.utc).isoformat()
+    pack_stem = f"rule034_shadow_{safe_date}_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+    pack_dir = Path(config.EVIDENCE_PACK_DIR)
+    work_dir = pack_dir / pack_stem
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest = {
+        "kind": "rule034_shadow_monitor",
+        "version": config.APP_VERSION,
+        "generated_at_utc": generated_at,
+        "strategy_id": "tech_rule_034_rule033_gapfilled0_atrreach10_conservative",
+        "date": date,
+        "sector": sector,
+        "active": active,
+        "status": "active" if active else "inactive",
+        "reason": (
+            "Rule034 conditions met: conservative Rule033 miss-exclusion rows with gap_filled == 0 and atr_reach <= 10."
+            if active else
+            "Rule034 inactive for this date: no 13:30 Technology rows met Rule033 + gap_filled == 0 + atr_reach <= 10 conditions."
+        ),
+        "total_candidates_before_rank_cap": total_candidates,
+        "selection": {
+            "rank_feature": "distance_to_day_low",
+            "rank_direction": "desc",
+            "primary_top_k": 20,
+            "top_ks": top_ks,
+        },
+        "rule": _rule034_rule_dict(),
+        "execution_reference": {
+            "entry_delay_minutes": 1,
+            "planned_entry_time_et": "13:31",
+            "tp_bps": 100,
+            "sl_bps": 200,
+            "slippage_bps": req.slippage_bps,
+            "min_exit_minutes": 1,
+            "timestop_et": "15:50",
+        },
+        "evidence_note": (
+            "Rule034 is a conservative Rule033 event-day monitor, not a generic daily scanner. "
+            "It is intended to reduce completed-gap-fill and intraday-overextension misses."
+        ),
+        "outputs": [],
+        "evaluations": [],
+    }
+
+    all_rows = _rule034_shadow_export_rows(candidates, None)
+    all_csv = work_dir / "rule034_all_candidates.csv"
+    _write_dict_rows_csv(all_csv, all_rows)
+    manifest["outputs"].append(all_csv.name)
+
+    for k in top_ks:
+        rows = _rule034_shadow_export_rows(candidates, k)
+        fn = work_dir / f"rule034_top{k}_candidates.csv"
+        _write_dict_rows_csv(fn, rows)
+        manifest["outputs"].append(fn.name)
+
+        if active and req.evaluate:
+            try:
+                normalised = {
+                    "rule": _rule034_rule_dict(),
+                    "tp_bps": 100,
+                    "sl_bps": 200,
+                    "timestop_et": "15:50",
+                    "slippage_bps": req.slippage_bps,
+                    "start_date": date,
+                    "end_date": date,
+                    "filter_mode": "standard",
+                    "entry_delay_minutes": 1,
+                    "min_exit_minutes": 1,
+                    "max_signals_per_day": k,
+                    "rank_feature": "distance_to_day_low",
+                    "rank_direction": "desc",
+                    "just_in_time_backfill": req.just_in_time_backfill,
+                    "conditional_exits": [],
+                }
+                bt_req = BacktestRunRequest.model_validate(normalised)
+                summary = _execute_backtest_request(bt_req)
+                eval_item = {
+                    "top_k": k,
+                    "status": "succeeded" if not summary.get("error") else "no_signals_or_unresolved",
+                    "summary": summary,
+                }
+                trades_name = summary.get("trades_csv_filename")
+                if trades_name:
+                    src = Path(config.EVIDENCE_PACK_DIR) / trades_name
+                    if src.exists():
+                        dst = work_dir / f"rule034_top{k}_shadow_trades.csv"
+                        dst.write_bytes(src.read_bytes())
+                        eval_item["trades_csv"] = dst.name
+                        manifest["outputs"].append(dst.name)
+                manifest["evaluations"].append(eval_item)
+            except Exception as e:
+                manifest["evaluations"].append({
+                    "top_k": k,
+                    "status": "failed",
+                    "error": f"{type(e).__name__}: {e}",
+                    "note": "This can be normal for unresolved live same-day rows; candidate CSVs are still valid.",
+                })
+
+    manifest_path = work_dir / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, default=str), encoding="utf-8")
+    manifest["outputs"].append(manifest_path.name)
+
+    zip_filename = f"{pack_stem}.zip"
+    zip_path = pack_dir / zip_filename
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for child in sorted(work_dir.iterdir()):
+            if child.is_file():
+                zf.write(child, arcname=child.name)
+
+    manifest.update({
+        "pack_filename": zip_filename,
+        "pack_url": f"/packs/{zip_filename}",
+        "top20_preview": _rule034_shadow_export_rows(candidates, 20),
+    })
+    return manifest
+
 # Audit + repair (v0.7.1): verify stored backtest outcomes against the
 # canonical reference simulator. Produces evidence pack on divergence.
 # ---------------------------------------------------------------------------

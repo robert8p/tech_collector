@@ -34,6 +34,9 @@ scanners.
 | `GET` | `/jobs` | yes | List all jobs in memory |
 | `GET` | `/packs` | yes | List pack zips on disk |
 | `GET` | `/packs/{filename}` | yes | Download a pack zip |
+| `POST` | `/rule009/shadow/run` | yes | Build Rule009 refined read-only live-shadow evidence pack |
+| `POST` | `/rule029/shadow/run` | yes | Build Rule029 read-only live-shadow evidence pack with Rule009 overlap comparison |
+| `POST` | `/rule033/shadow/run` | yes | Build Rule033 read-only live-shadow evidence pack |
 
 All authenticated endpoints require an `X-API-Key` header matching the
 `API_KEY` environment variable set in the Render dashboard.
@@ -53,6 +56,14 @@ See inline docstrings in `feature_computer.py`. Notes:
 - **`sector_relative_strength`** preserves the original leak-prone
   definition for schema compatibility. **Use `rs_leakfree` for patterns.**
 
+## Promoted / shadow rules
+
+- Rule009 refined: 10:30 high-volatility Technology momentum benchmark with `gap_pct <= 0` and `range_expansion >= 1.0` filters.
+- Rule029: 10:30 Technology pullback/reclaim live-shadow candidate; primary profile is top3 by lowest ATR reach, TP100/SL200, 25 bps evaluation slippage.
+- Rule033: 13:30 Technology selloff-rebound live-shadow monitor with volume confirmation.
+
+All rule shadow endpoints are read-only; no live trading is enabled.
+
 ## Known limitations
 
 - Universe is frozen and survivorship-biased.
@@ -60,3 +71,7 @@ See inline docstrings in `feature_computer.py`. Notes:
   surfaced in the pack summary.
 - In-memory job registry: if the service restarts mid-job, the job
   record is lost (SQLite writes are durable; re-send the request).
+
+## v0.7.29 Rule034 merged monitor
+
+Adds Rule034 conservative monitoring on top of the combined Rule009 refined + Rule029 + Rule033 build. Rule034 is a conservative Rule033 miss-exclusion variant: Rule033 plus `gap_filled == 0` and `atr_reach <= 10`, with UI buttons, `/rule034/shadow/run`, and promoted presets.

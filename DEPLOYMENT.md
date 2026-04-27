@@ -303,3 +303,7 @@ Same billing account as your other scanners.
 - **Staging environment:** this guide sets up one environment called
   production. If you want a staging service pointing at a second GitHub
   branch, duplicate the Blueprint with a different name.
+
+## v0.7.29 Rule034 merged monitor
+
+This version preserves Rule009 refined, Rule029, and Rule033, and adds Rule034 conservative monitoring. After deploy, confirm `/health` reports `0.7.29` and the dashboard exposes Rule009, Rule029, Rule033, and Rule034 controls.

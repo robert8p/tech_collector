@@ -1,0 +1,55 @@
+{
+  "preset_type": "tech_collector_backtest_preset",
+  "preset_version": 1,
+  "label": "LIVE_SHADOW_PRIMARY_rule029_top3_atrreach_low_tp100_sl200",
+  "rule": {
+    "id": "tech_rule_029_live_shadow_primary_top3_atrreach_low",
+    "sector": "Information Technology",
+    "target": "target",
+    "predicates": [
+      {
+        "feature": "minutes_since_open",
+        "op": "==",
+        "value": 60
+      },
+      {
+        "feature": "spy_vol",
+        "op": ">=",
+        "value": 0.005
+      },
+      {
+        "feature": "spy_momentum",
+        "op": ">=",
+        "value": 0
+      },
+      {
+        "feature": "distance_to_vwap",
+        "op": "<",
+        "value": 0
+      },
+      {
+        "feature": "distance_to_vwap",
+        "op": ">=",
+        "value": -0.0042402661
+      },
+      {
+        "feature": "vwap_slope",
+        "op": ">",
+        "value": 0
+      }
+    ],
+    "notes": "Rule029 primary live-shadow candidate. 10:30 ET Technology event-day pullback/reclaim: supportive SPY volatility/momentum, stock below but not far below VWAP, VWAP slope positive. Rank candidates by lowest atr_reach and keep top 3. Selected as primary because TP100/SL200 at 25 bps was positive in both chronological periods and had the cleanest balance of robustness and tail risk."
+  },
+  "tp_bps": 100,
+  "sl_bps": 200,
+  "timestop_et": "15:50",
+  "slippage_bps": 25,
+  "filter_mode": "standard",
+  "entry_delay_minutes": 1,
+  "min_exit_minutes": 1,
+  "max_signals_per_day": 3,
+  "rank_feature": "atr_reach",
+  "rank_direction": "asc",
+  "just_in_time_backfill": true,
+  "conditional_exits": []
+}

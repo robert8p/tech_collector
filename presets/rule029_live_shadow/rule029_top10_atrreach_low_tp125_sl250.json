@@ -1,0 +1,55 @@
+{
+  "preset_type": "tech_collector_backtest_preset",
+  "preset_version": 1,
+  "label": "WATCHLIST_CAPACITY_rule029_top10_atrreach_low_tp125_sl250",
+  "rule": {
+    "id": "tech_rule_029_capacity_watch_top10_atrreach_low",
+    "sector": "Information Technology",
+    "target": "target",
+    "predicates": [
+      {
+        "feature": "minutes_since_open",
+        "op": "==",
+        "value": 60
+      },
+      {
+        "feature": "spy_vol",
+        "op": ">=",
+        "value": 0.005
+      },
+      {
+        "feature": "spy_momentum",
+        "op": ">=",
+        "value": 0
+      },
+      {
+        "feature": "distance_to_vwap",
+        "op": "<",
+        "value": 0
+      },
+      {
+        "feature": "distance_to_vwap",
+        "op": ">=",
+        "value": -0.0042402661
+      },
+      {
+        "feature": "vwap_slope",
+        "op": ">",
+        "value": 0
+      }
+    ],
+    "notes": "Rule029 capacity watchlist variant. Same predicates as primary, rank by lowest atr_reach, keep top 10, TP125/SL250. Stronger historical average than top3 but wider event-day exposure, so shadow only; do not promote ahead of top3 without live evidence and day-level exposure review."
+  },
+  "tp_bps": 125,
+  "sl_bps": 250,
+  "timestop_et": "15:50",
+  "slippage_bps": 25,
+  "filter_mode": "standard",
+  "entry_delay_minutes": 1,
+  "min_exit_minutes": 1,
+  "max_signals_per_day": 10,
+  "rank_feature": "atr_reach",
+  "rank_direction": "asc",
+  "just_in_time_backfill": true,
+  "conditional_exits": []
+}

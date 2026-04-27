@@ -20,6 +20,12 @@ import sys
 import tempfile
 import time
 import traceback
+from pathlib import Path
+
+# Allow both `python -m tests.smoke_jobs` and direct `python tests/smoke_jobs.py`.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 RESULTS: list[tuple[str, bool, str]] = []

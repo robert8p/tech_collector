@@ -1,0 +1,32 @@
+{
+  "preset_type": "tech_collector_backtest_preset",
+  "preset_version": 1,
+  "label": "rule033_1330_selloff_rebound_volume_accel_top20_tp100_sl200_slip20_fullspan",
+  "rule": {
+    "id": "tech_rule_033_1330_selloff_rebound_volume_accel",
+    "sector": "Information Technology",
+    "target": "target",
+    "predicates": [
+      {"feature": "minutes_since_open", "op": "==", "value": 240},
+      {"feature": "spy_ret", "op": "<=", "value": -0.0086881596898112},
+      {"feature": "momentum", "op": "<=", "value": -0.00135528523765575},
+      {"feature": "atr_reach", "op": "<=", "value": 13.0},
+      {"feature": "volume_acceleration", "op": ">=", "value": 1.0}
+    ],
+    "notes": "Promoted 13:30 Technology selloff-event rebound monitor with volume confirmation. Rank qualifying symbols by distance_to_day_low descending and keep top 20 per day. Event-day monitor only, not a daily scanner."
+  },
+  "tp_bps": 100,
+  "sl_bps": 200,
+  "timestop_et": "15:50",
+  "slippage_bps": 20,
+  "start_date": "2024-04-22",
+  "end_date": "2026-04-17",
+  "filter_mode": "standard",
+  "entry_delay_minutes": 1,
+  "min_exit_minutes": 1,
+  "max_signals_per_day": 20,
+  "rank_feature": "distance_to_day_low",
+  "rank_direction": "desc",
+  "just_in_time_backfill": true,
+  "conditional_exits": []
+}
