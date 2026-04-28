@@ -578,6 +578,7 @@
         <button class="small" id="mr-run-r038" type="button">run Rule038 only</button>
         <button class="small" id="mr-run-current-five" type="button">run current five</button>
         <button class="small" id="mr-run-current-five-r038" type="button">run current five + Rule038 ▶</button>
+        <button class="small" id="mr-run-capital-recycling-all" type="button" title="Runs all current rules with finite capital slots, duplicate signals allowed, and slot reuse after exits.">run capital-recycling all rules ▶</button>
       </div>
     </div>
     <div class="row" style="gap: 8px; align-items: end; margin-top: 10px;">
@@ -601,15 +602,23 @@
         <label>dedupe policy</label>
         <select id="mr-dedupe">
           <option value="best_priority" selected>best_priority</option>
-          <option value="allow_all">allow_all research mode</option>
+          <option value="allow_all">allow_all / duplicate signals separate</option>
         </select>
+      </div>
+      <div style="flex: 1;">
+        <label>capital slots</label>
+        <input type="number" id="mr-capital-slots" value="10" min="1" max="500" step="1">
+      </div>
+      <div style="display:flex; align-items:center; gap:6px; padding-bottom:8px;">
+        <input type="checkbox" id="mr-capital-recycling" style="width:auto;">
+        <label for="mr-capital-recycling" style="display:inline; text-transform:none; letter-spacing:0; margin:0; font-size:11px;">capital recycling</label>
       </div>
     </div>
     <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px;">
       <input type="file" id="mr-file" accept=".json,application/json" title="Optional: upload a market replay request JSON such as the files in the replay bundle.">
       <button class="small" id="mr-run-file" type="button">run uploaded replay JSON ▶</button>
       <button class="small" id="mr-refresh-packs" type="button">refresh packs</button>
-      <span style="color: var(--text-faint); font-size: 11px;">Current five: Rule009 refined, Rule029, Rule033, Rule034, Rule036B. Candidate comparison adds Rule038. Use the ZIP output to assess combined-scanner edge, overlap, rejected signals, symbol concentration, and worst days.</span>
+      <span style="color: var(--text-faint); font-size: 11px;">Current five: Rule009 refined, Rule029, Rule033, Rule034, Rule036B. Candidate comparison adds Rule038. Capital-recycling mode uses finite slots, opens queued signals after exits, and reports compounded equity.</span>
     </div>
     <div id="mr-status" style="display:none; margin-top: 8px; color: var(--text-dim); font-size: 11px; font-family: var(--mono); white-space: pre-wrap;"></div>
   </div>
@@ -2967,17 +2976,21 @@ function _mrStatus(msg, kind) {
 }
 
 function _marketReplayPayload(ruleIds) {
+  const recycling = !!(document.getElementById("mr-capital-recycling") && document.getElementById("mr-capital-recycling").checked);
+  const dedupe = document.getElementById("mr-dedupe").value || "best_priority";
   return {
     start_date: document.getElementById("mr-start").value || "2024-04-22",
     end_date: document.getElementById("mr-end").value || "2026-04-17",
     sector: "Information Technology",
     rules: ruleIds,
     slippage_bps: Number(document.getElementById("mr-slippage").value || 25),
-    global_max_trades_per_day: Number(document.getElementById("mr-max-day").value || 10),
-    max_trades_per_symbol_per_day: 1,
-    dedupe_policy: document.getElementById("mr-dedupe").value || "best_priority",
+    global_max_trades_per_day: recycling ? 0 : Number(document.getElementById("mr-max-day").value || 10),
+    max_trades_per_symbol_per_day: (recycling && dedupe === "allow_all") ? 0 : 1,
+    dedupe_policy: dedupe,
     capital_mode: "equal_weight",
     include_virtual_trades: true,
+    capital_recycling_enabled: recycling,
+    capital_slots: Number((document.getElementById("mr-capital-slots") || {}).value || 10),
     just_in_time_backfill: true,
     delete_raw_bars_after: false
   };
@@ -3014,6 +3027,8 @@ async function _runMarketReplayPayload(payload, label) {
       net_pnl_bps: summary.net_pnl_bps,
       firing_days: summary.firing_days,
       worst_day: summary.worst_day,
+      capital_recycling: summary.capital_recycling,
+      compounded_fixed_slot_reference: summary.compounded_fixed_slot_reference,
       rule_summary: summary.rule_summary
     }, null, 2), "");
     toast("market replay pack created", "ok");
@@ -3059,6 +3074,13 @@ const _mrCurrentFive = document.getElementById("mr-run-current-five");
 if (_mrCurrentFive) _mrCurrentFive.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20"], "current five");
 const _mrCurrentFiveR038 = document.getElementById("mr-run-current-five-r038");
 if (_mrCurrentFiveR038) _mrCurrentFiveR038.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15"], "current five + Rule038");
+const _mrCapitalRecyclingAll = document.getElementById("mr-run-capital-recycling-all");
+if (_mrCapitalRecyclingAll) _mrCapitalRecyclingAll.onclick = () => {
+  if (document.getElementById("mr-capital-recycling")) document.getElementById("mr-capital-recycling").checked = true;
+  if (document.getElementById("mr-dedupe")) document.getElementById("mr-dedupe").value = "allow_all";
+  if (document.getElementById("mr-max-day")) document.getElementById("mr-max-day").value = "0";
+  return _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15"], "capital recycling all current rules");
+};
 const _mrRunFile = document.getElementById("mr-run-file");
 if (_mrRunFile) _mrRunFile.onclick = _runUploadedMarketReplayJson;
 const _mrRefresh = document.getElementById("mr-refresh-packs");

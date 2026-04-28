@@ -2913,14 +2913,16 @@ class MarketReplayRunRequest(BaseModel):
         description="Rule registry ids to include. See /market-replay/rules.",
     )
     slippage_bps: float = Field(default=25.0, ge=0.0, le=100.0)
-    global_max_trades_per_day: int = Field(default=10, ge=1, le=100)
-    max_trades_per_symbol_per_day: int = Field(default=1, ge=0, le=10)
+    global_max_trades_per_day: int = Field(default=10, ge=0, le=500, description="0 disables the daily cap; capital-recycling mode usually uses 0.")
+    max_trades_per_symbol_per_day: int = Field(default=1, ge=0, le=50, description="0 disables symbol/day caps. Use 0 with dedupe_policy=allow_all to treat duplicate signals as separate investments.")
     dedupe_policy: str = Field(
         default="best_priority",
         description="allow_all or best_priority. best_priority is default and prevents duplicate symbol-day trades.",
     )
     capital_mode: str = Field(default="equal_weight")
     include_virtual_trades: bool = Field(default=True)
+    capital_recycling_enabled: bool = Field(default=False, description="If true, simulate finite capital slots that reopen when prior positions close.")
+    capital_slots: int = Field(default=10, ge=1, le=500, description="Number of concurrent capital slots in capital-recycling mode.")
     just_in_time_backfill: bool = Field(default=True)
     delete_raw_bars_after: bool = Field(default=False)
 
@@ -2950,6 +2952,8 @@ def _market_replay_job_wrapper(params: dict) -> dict:
         dedupe_policy=params.get("dedupe_policy", "best_priority"),
         capital_mode=params.get("capital_mode", "equal_weight"),
         include_virtual_trades=bool(params.get("include_virtual_trades", True)),
+        capital_recycling_enabled=bool(params.get("capital_recycling_enabled", False)),
+        capital_slots=int(params.get("capital_slots", 10)),
         just_in_time_backfill=bool(params.get("just_in_time_backfill", True)),
         delete_raw_bars_after=bool(params.get("delete_raw_bars_after", False)),
         db_path=config.DB_PATH,
