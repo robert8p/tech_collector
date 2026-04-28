@@ -1,0 +1,16 @@
+{
+  "start_date": "2024-04-22",
+  "end_date": "2026-04-17",
+  "sector": "Information Technology",
+  "slippage_bps": 25,
+  "global_max_trades_per_day": 10,
+  "max_trades_per_symbol_per_day": 1,
+  "dedupe_policy": "best_priority",
+  "capital_mode": "equal_weight",
+  "include_virtual_trades": true,
+  "just_in_time_backfill": true,
+  "delete_raw_bars_after": false,
+  "rules": [
+    "rule038_top15"
+  ]
+}

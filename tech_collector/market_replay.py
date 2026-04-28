@@ -1,4 +1,4 @@
-"""Multi-rule historical market replay engine (v0.7.32).
+"""Multi-rule historical market replay engine (v0.7.33).
 
 This module answers a different question from standalone backtests:
     "If the live scanner had evaluated all active rules each historical day,
@@ -67,7 +67,7 @@ def _rule(rule_id: str, sector: str, predicates: list[dict], notes: str) -> rule
 
 
 def registry(sector: str = "Information Technology") -> dict[str, ReplayRuleSpec]:
-    """Return the canonical v0.7.32 multi-rule replay registry."""
+    """Return the canonical v0.7.33 multi-rule replay registry."""
     return {
         "rule029_top3": ReplayRuleSpec(
             rule_id="rule029_top3",
@@ -155,6 +155,36 @@ def registry(sector: str = "Information Technology") -> dict[str, ReplayRuleSpec
             sl_bps=200,
             default_slippage_bps=25,
             notes="Validated in standalone path-dependent stress at 20/25/30 bps; run combined replay before live-shadow use.",
+        ),
+
+        "rule038_top15": ReplayRuleSpec(
+            rule_id="rule038_top15",
+            display_name="Rule038 top15 high-vol breadth ATR-low",
+            status="replay_candidate",
+            priority=36,
+            sector=sector,
+            rule=_rule(
+                "tech_rule_038_1330_highvol_breadth_atrlow_top15",
+                sector,
+                [
+                    {"feature": "minutes_since_open", "op": "==", "value": 240},
+                    {"feature": "spy_vol", "op": ">=", "value": 0.004},
+                    {"feature": "spy_momentum", "op": ">=", "value": 0.0},
+                    {"feature": "gap_pct", "op": "<=", "value": 0.0},
+                    {"feature": "range_expansion", "op": ">=", "value": 1.0},
+                    {"feature": "atr_reach", "op": "<=", "value": 8.0},
+                    {"feature": "sector_breadth_up", "op": ">=", "value": 0.4},
+                ],
+                "13:30 Technology high-volatility controlled momentum with sector-breadth confirmation; rank by rs_leakfree desc; top15 replay candidate.",
+            ),
+            scan_time_et="13:30",
+            rank_feature="rs_leakfree",
+            rank_direction="desc",
+            max_signals_per_day=15,
+            tp_bps=100,
+            sl_bps=200,
+            default_slippage_bps=25,
+            notes="Rule038 v4 standalone app batch was strongly positive at 10/15/20 bps; replay-candidate only until combined five-rule market replay confirms incremental value.",
         ),
         "rule033_top20": ReplayRuleSpec(
             rule_id="rule033_top20",

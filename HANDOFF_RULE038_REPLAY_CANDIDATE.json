@@ -1,0 +1,22 @@
+{
+  "version": "0.7.33",
+  "purpose": "Register Rule038 as market-replay candidate only",
+  "changed_files": [
+    "tech_collector/config.py",
+    "tech_collector/market_replay.py",
+    "tech_collector/api.py",
+    "presets/market_replay/market_replay_current_five_25bps_cap10.json",
+    "presets/market_replay/market_replay_rule038_only_25bps_cap10.json",
+    "presets/market_replay/market_replay_current_five_plus_rule038_25bps_cap10.json",
+    "presets/market_replay/market_replay_rule036B_plus_rule038_25bps_cap10.json",
+    "RULE038_REPLAY_CANDIDATE_NOTES.md"
+  ],
+  "default_rules_unchanged": true,
+  "rule038_registry_id": "rule038_top15",
+  "rule038_status": "replay_candidate",
+  "post_deploy_evidence_needed": [
+    "market_replay_current_five_25bps_cap10",
+    "market_replay_rule038_only_25bps_cap10",
+    "market_replay_current_five_plus_rule038_25bps_cap10"
+  ]
+}

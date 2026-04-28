@@ -2894,7 +2894,7 @@ def rule034_shadow_run(req: Rule034ShadowRequest):
 
 
 # ---------------------------------------------------------------------------
-# Multi-rule historic market replay (v0.7.32)
+# Multi-rule historic market replay (v0.7.33)
 # ---------------------------------------------------------------------------
 class MarketReplayRunRequest(BaseModel):
     """Replay the historical market the way the future live scanner should behave.
