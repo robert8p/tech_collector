@@ -2908,7 +2908,7 @@ class MarketReplayRunRequest(BaseModel):
     sector: str = Field(default="Information Technology")
     rules: list[str] = Field(
         default_factory=lambda: [
-            "rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20"
+            "rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15"
         ],
         description="Rule registry ids to include. See /market-replay/rules.",
     )

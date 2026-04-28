@@ -1,4 +1,4 @@
-"""Multi-rule historical market replay engine (v0.7.36).
+"""Multi-rule historical market replay engine (v0.7.37).
 
 This module answers a different question from standalone backtests:
     "If the live scanner had evaluated all active rules each historical day,
@@ -68,7 +68,7 @@ def _rule(rule_id: str, sector: str, predicates: list[dict], notes: str) -> rule
 
 
 def registry(sector: str = "Information Technology") -> dict[str, ReplayRuleSpec]:
-    """Return the canonical v0.7.36 multi-rule replay registry."""
+    """Return the canonical v0.7.37 multi-rule replay registry."""
     return {
         "rule029_top3": ReplayRuleSpec(
             rule_id="rule029_top3",
@@ -187,6 +187,90 @@ def registry(sector: str = "Information Technology") -> dict[str, ReplayRuleSpec
             default_slippage_bps=25,
             notes="Rule038 v4 standalone batch and six-rule 25 bps market replay were strongly positive; promote to live-shadow evidence collection, not live capital.",
         ),
+"rule039_top10": ReplayRuleSpec(
+    rule_id="rule039_top10",
+    display_name="Rule039 top10 10:30 ATR-breadth momentum",
+    status="candidate_validation",
+    priority=21,
+    sector=sector,
+    rule=_rule(
+        "tech_rule_039_1030_highvol_atr_breadth_top10_momspy",
+        sector,
+        [
+            {"feature": "minutes_since_open", "op": "==", "value": 60},
+            {"feature": "spy_vol", "op": ">=", "value": 0.005},
+            {"feature": "spy_momentum", "op": ">=", "value": 0.0},
+            {"feature": "atr_reach", "op": "<=", "value": 8.0},
+            {"feature": "sector_breadth_up", "op": ">=", "value": 0.4},
+        ],
+        "Claude Rule039 candidate: 10:30 high-vol momentum companion to Rule009, constrained by ATR reach and sector breadth confirmation; rank by mom_vs_spy desc; top10 validation candidate only.",
+    ),
+    scan_time_et="10:30",
+    rank_feature="mom_vs_spy",
+    rank_direction="desc",
+    max_signals_per_day=10,
+    tp_bps=100,
+    sl_bps=200,
+    default_slippage_bps=25,
+    notes="Candidate only. Combined replay decides whether it adds value over the real six-rule baseline.",
+),
+
+"rule040_top15": ReplayRuleSpec(
+    rule_id="rule040_top15",
+    display_name="Rule040 top15 11:30 day-high breakout",
+    status="candidate_validation",
+    priority=25,
+    sector=sector,
+    rule=_rule(
+        "tech_rule_040_1130_dayhigh_break_top15_rsleakfree",
+        sector,
+        [
+            {"feature": "minutes_since_open", "op": "==", "value": 120},
+            {"feature": "broke_day_high_this_bar", "op": "==", "value": 1},
+            {"feature": "spy_vol", "op": ">=", "value": 0.004},
+            {"feature": "sector_breadth_up", "op": ">=", "value": 0.5},
+            {"feature": "atr_reach", "op": "<=", "value": 8.0},
+        ],
+        "Claude Rule040 candidate: 11:30 day-high breakout in a confirmed regime; rank by rs_leakfree desc; top15 validation candidate only.",
+    ),
+    scan_time_et="11:30",
+    rank_feature="rs_leakfree",
+    rank_direction="desc",
+    max_signals_per_day=15,
+    tp_bps=100,
+    sl_bps=200,
+    default_slippage_bps=25,
+    notes="Candidate only. Orthogonal on paper, but sample-thin. Must pass standalone and combined replay before any promotion.",
+),
+
+"rule041_top15": ReplayRuleSpec(
+    rule_id="rule041_top15",
+    display_name="Rule041 top15 13:30 ORB sustained",
+    status="candidate_validation",
+    priority=37,
+    sector=sector,
+    rule=_rule(
+        "tech_rule_041_1330_orb_sustained_top15",
+        sector,
+        [
+            {"feature": "minutes_since_open", "op": "==", "value": 240},
+            {"feature": "broke_opening_range_high", "op": "==", "value": 1},
+            {"feature": "orb_strength", "op": ">=", "value": 1.0},
+            {"feature": "atr_reach", "op": "<=", "value": 6.0},
+            {"feature": "sector_breadth_up", "op": ">=", "value": 0.3},
+        ],
+        "Claude Rule041 candidate: 13:30 sustained opening-range breakout; rank by orb_strength desc; top15 validation candidate only.",
+    ),
+    scan_time_et="13:30",
+    rank_feature="orb_strength",
+    rank_direction="desc",
+    max_signals_per_day=15,
+    tp_bps=100,
+    sl_bps=200,
+    default_slippage_bps=25,
+    notes="Candidate only. Claude stress tests flagged 2025Q2 P1 concentration and did not measure overlap versus Rule036B; treat as unproven until combined replay confirms incremental value.",
+),
+
         "rule033_top20": ReplayRuleSpec(
             rule_id="rule033_top20",
             display_name="Rule033 top20 selloff rebound",
@@ -245,7 +329,7 @@ def registry(sector: str = "Information Technology") -> dict[str, ReplayRuleSpec
     }
 
 
-DEFAULT_RULE_IDS = ["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20"]
+DEFAULT_RULE_IDS = ["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15"]
 
 
 # ---------------------------------------------------------------------------
@@ -573,7 +657,7 @@ def _daily_summary_rows(trades: list[dict]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Capital-recycling replay helpers (v0.7.36)
+# Capital-recycling replay helpers (v0.7.37)
 # ---------------------------------------------------------------------------
 def _hhmm_to_minutes(hhmm: str | None, default: int | None = None) -> int | None:
     """Convert HH:MM to minutes since midnight ET."""

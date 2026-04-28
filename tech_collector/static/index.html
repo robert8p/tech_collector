@@ -576,8 +576,10 @@
         <button class="small" id="mr-run-r009-r029" type="button">run Rule009 + Rule029</button>
         <button class="small" id="mr-run-r036b" type="button">run Rule036B only</button>
         <button class="small" id="mr-run-r038" type="button">run Rule038 only</button>
-        <button class="small" id="mr-run-current-five" type="button">run current five</button>
-        <button class="small" id="mr-run-current-five-r038" type="button">run current five + Rule038 ▶</button>
+        <button class="small" id="mr-run-current-six" type="button">run current six</button>
+        <button class="small" id="mr-run-current-six-r039" type="button">run current six + Rule039 ▶</button>
+        <button class="small" id="mr-run-current-six-r040" type="button">run current six + Rule040</button>
+        <button class="small" id="mr-run-current-six-r041" type="button">run current six + Rule041</button>
         <button class="small" id="mr-run-capital-recycling-all" type="button" title="Runs all current rules with finite capital slots, duplicate signals allowed, and slot reuse after exits.">run capital-recycling all rules ▶</button>
       </div>
     </div>
@@ -618,7 +620,7 @@
       <input type="file" id="mr-file" accept=".json,application/json" title="Optional: upload a market replay request JSON such as the files in the replay bundle.">
       <button class="small" id="mr-run-file" type="button">run uploaded replay JSON ▶</button>
       <button class="small" id="mr-refresh-packs" type="button">refresh packs</button>
-      <span style="color: var(--text-faint); font-size: 11px;">Current five: Rule009 refined, Rule029, Rule033, Rule034, Rule036B. Candidate comparison adds Rule038. Capital-recycling mode uses finite slots, opens queued signals after exits, and reports compounded equity.</span>
+      <span style="color: var(--text-faint); font-size: 11px;">Current six baseline: Rule009 refined, Rule029, Rule033, Rule034, Rule036B, Rule038. Candidate replay buttons add one Claude rule to that six-rule baseline. Capital-recycling mode uses finite slots, opens queued signals after exits, and reports compounded equity.</span>
     </div>
     <div id="mr-status" style="display:none; margin-top: 8px; color: var(--text-dim); font-size: 11px; font-family: var(--mono); white-space: pre-wrap;"></div>
   </div>
@@ -3070,10 +3072,14 @@ const _mrR036B = document.getElementById("mr-run-r036b");
 if (_mrR036B) _mrR036B.onclick = () => _runMarketReplay(["rule036B_cap10"], "Rule036B only");
 const _mrR038 = document.getElementById("mr-run-r038");
 if (_mrR038) _mrR038.onclick = () => _runMarketReplay(["rule038_top15"], "Rule038 only");
-const _mrCurrentFive = document.getElementById("mr-run-current-five");
-if (_mrCurrentFive) _mrCurrentFive.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20"], "current five");
-const _mrCurrentFiveR038 = document.getElementById("mr-run-current-five-r038");
-if (_mrCurrentFiveR038) _mrCurrentFiveR038.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15"], "current five + Rule038");
+const _mrCurrentSix = document.getElementById("mr-run-current-six");
+if (_mrCurrentSix) _mrCurrentSix.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15"], "current six");
+const _mrCurrentSixR039 = document.getElementById("mr-run-current-six-r039");
+if (_mrCurrentSixR039) _mrCurrentSixR039.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15", "rule039_top10"], "current six + Rule039");
+const _mrCurrentSixR040 = document.getElementById("mr-run-current-six-r040");
+if (_mrCurrentSixR040) _mrCurrentSixR040.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15", "rule040_top15"], "current six + Rule040");
+const _mrCurrentSixR041 = document.getElementById("mr-run-current-six-r041");
+if (_mrCurrentSixR041) _mrCurrentSixR041.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15", "rule041_top15"], "current six + Rule041");
 const _mrCapitalRecyclingAll = document.getElementById("mr-run-capital-recycling-all");
 if (_mrCapitalRecyclingAll) _mrCapitalRecyclingAll.onclick = () => {
   if (document.getElementById("mr-capital-recycling")) document.getElementById("mr-capital-recycling").checked = true;

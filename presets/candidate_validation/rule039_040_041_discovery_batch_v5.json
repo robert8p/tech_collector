@@ -1,0 +1,1130 @@
+{
+  "label": "rule039_040_041_discovery_batch_v5",
+  "presets": [
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule039_ALTRANK_top10_rsleakfree_desc_slip15",
+      "rule": {
+        "id": "tech_rule_039_1030_highvol_atr_breadth_top10_rsleakfree",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 60
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.005
+          },
+          {
+            "feature": "spy_momentum",
+            "op": ">=",
+            "value": 0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.4
+          }
+        ],
+        "notes": "Rule039 alt-rank: rs_leakfree desc (vs mom_vs_spy). In stress P1+25.7 Fw+35.2 vs primary +28.7/+54.6 - meaningfully different Fwd performance. Tests rank-metric robustness."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 15,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 10,
+      "rank_feature": "rs_leakfree",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule039_CONTROL_NOBREADTH_top10_mom_vs_spy_desc_slip15",
+      "rule": {
+        "id": "tech_rule_039_CONTROL_NOBRD_1030_top10_momspy",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 60
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.005
+          },
+          {
+            "feature": "spy_momentum",
+            "op": ">=",
+            "value": 0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          }
+        ],
+        "notes": "Rule039 CONTROL: drops sector_breadth_up>=0.4. In stress n=480 P1+26.2 Fw+47.2 - close to primary, suggesting breadth filter only modestly improves edge. Diagnostic test."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 15,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 10,
+      "rank_feature": "mom_vs_spy",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule039_K5_top5_mom_vs_spy_desc_slip15",
+      "rule": {
+        "id": "tech_rule_039_K5_1030_top5_momspy",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 60
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.005
+          },
+          {
+            "feature": "spy_momentum",
+            "op": ">=",
+            "value": 0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.4
+          }
+        ],
+        "notes": "Rule039 k=5 variant: top 5 by mom_vs_spy desc. In stress P1+18.4 Fw+47.4 - tighter rank, smaller sample. Tests k sensitivity."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 15,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 5,
+      "rank_feature": "mom_vs_spy",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule039_LOOSE_vol45_atr10_top15_mom_vs_spy_desc_slip15",
+      "rule": {
+        "id": "tech_rule_039_LOOSE_1030_vol45_atr10_top15_momspy",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 60
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.0045
+          },
+          {
+            "feature": "spy_momentum",
+            "op": ">=",
+            "value": 0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 10.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.4
+          }
+        ],
+        "notes": "Rule039 LOOSE variant: vol>=0.0045 atr<=10 top15. In stress n=515 P1+17.5 Fw+26.1 - more samples, lower edge. Probes lower plateau."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 15,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 15,
+      "rank_feature": "mom_vs_spy",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule039_TIGHT_vol60_brd50_top10_mom_vs_spy_desc_slip15",
+      "rule": {
+        "id": "tech_rule_039_TIGHT_1030_vol60_brd50_top10_momspy",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 60
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.006
+          },
+          {
+            "feature": "spy_momentum",
+            "op": ">=",
+            "value": 0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.5
+          }
+        ],
+        "notes": "Rule039 TIGHT variant: spy_vol>=0.006 (vs primary 0.005) and brd>=0.5 (vs 0.4). In stress n=152 (~15 days) P1+34.6 Fw+73.5 at s15. Probe upper plateau."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 15,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 10,
+      "rank_feature": "mom_vs_spy",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule039_top10_mom_vs_spy_desc_tp100_sl200_slip10_fullspan",
+      "rule": {
+        "id": "tech_rule_039_1030_highvol_atr_breadth_top10_momspy",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 60
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.005
+          },
+          {
+            "feature": "spy_momentum",
+            "op": ">=",
+            "value": 0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.4
+          }
+        ],
+        "notes": "Rule039 candidate: 10:30 ET Information Technology high-vol regime momentum companion to Rule009. DELIBERATELY RELAXED gap_pct/range_expansion gates from Rule009 (which would push overlap to 93%). Predicates: spy_vol>=0.005, spy_momentum>=0, atr_reach<=8 (excludes already-extended), sector_breadth_up>=0.4 (broad participation). Rank by mom_vs_spy desc, top 10. n=352 trades over 36 firing days (P1: 192/20d, Fwd: 160/16d). Day-overlap with Rule009: 36/36 (100%) - same regime days. Key-overlap with all 5 existing rules: 132/352 (38%) - 220 NEW (date,symbol) picks. Stress-tested: spans 7 P1 quarters (only 2025Q1 weak at -3.8) and 3 Fwd quarters (all >+45). Leave-one-quarter-out keeps both phases positive in all 9 LOQO checks. Symbol diversity high: top symbol SMCI 16/352 (4.5%). Drop-each-top-symbol: P1>=+19, Fwd>=+45. Rank choice mom_vs_spy vs momentum vs rs_leakfree: mom_vs_spy=momentum (tied), rs_leakfree slightly worse. atr_reach<=8 cap is the differentiator from Rule009 - excludes already-extended morning movers."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 10,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 10,
+      "rank_feature": "mom_vs_spy",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule039_top10_mom_vs_spy_desc_tp100_sl200_slip15_fullspan",
+      "rule": {
+        "id": "tech_rule_039_1030_highvol_atr_breadth_top10_momspy",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 60
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.005
+          },
+          {
+            "feature": "spy_momentum",
+            "op": ">=",
+            "value": 0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.4
+          }
+        ],
+        "notes": "Rule039 candidate: 10:30 ET Information Technology high-vol regime momentum companion to Rule009. DELIBERATELY RELAXED gap_pct/range_expansion gates from Rule009 (which would push overlap to 93%). Predicates: spy_vol>=0.005, spy_momentum>=0, atr_reach<=8 (excludes already-extended), sector_breadth_up>=0.4 (broad participation). Rank by mom_vs_spy desc, top 10. n=352 trades over 36 firing days (P1: 192/20d, Fwd: 160/16d). Day-overlap with Rule009: 36/36 (100%) - same regime days. Key-overlap with all 5 existing rules: 132/352 (38%) - 220 NEW (date,symbol) picks. Stress-tested: spans 7 P1 quarters (only 2025Q1 weak at -3.8) and 3 Fwd quarters (all >+45). Leave-one-quarter-out keeps both phases positive in all 9 LOQO checks. Symbol diversity high: top symbol SMCI 16/352 (4.5%). Drop-each-top-symbol: P1>=+19, Fwd>=+45. Rank choice mom_vs_spy vs momentum vs rs_leakfree: mom_vs_spy=momentum (tied), rs_leakfree slightly worse. atr_reach<=8 cap is the differentiator from Rule009 - excludes already-extended morning movers."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 15,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 10,
+      "rank_feature": "mom_vs_spy",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule039_top10_mom_vs_spy_desc_tp100_sl200_slip20_fullspan",
+      "rule": {
+        "id": "tech_rule_039_1030_highvol_atr_breadth_top10_momspy",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 60
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.005
+          },
+          {
+            "feature": "spy_momentum",
+            "op": ">=",
+            "value": 0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.4
+          }
+        ],
+        "notes": "Rule039 candidate: 10:30 ET Information Technology high-vol regime momentum companion to Rule009. DELIBERATELY RELAXED gap_pct/range_expansion gates from Rule009 (which would push overlap to 93%). Predicates: spy_vol>=0.005, spy_momentum>=0, atr_reach<=8 (excludes already-extended), sector_breadth_up>=0.4 (broad participation). Rank by mom_vs_spy desc, top 10. n=352 trades over 36 firing days (P1: 192/20d, Fwd: 160/16d). Day-overlap with Rule009: 36/36 (100%) - same regime days. Key-overlap with all 5 existing rules: 132/352 (38%) - 220 NEW (date,symbol) picks. Stress-tested: spans 7 P1 quarters (only 2025Q1 weak at -3.8) and 3 Fwd quarters (all >+45). Leave-one-quarter-out keeps both phases positive in all 9 LOQO checks. Symbol diversity high: top symbol SMCI 16/352 (4.5%). Drop-each-top-symbol: P1>=+19, Fwd>=+45. Rank choice mom_vs_spy vs momentum vs rs_leakfree: mom_vs_spy=momentum (tied), rs_leakfree slightly worse. atr_reach<=8 cap is the differentiator from Rule009 - excludes already-extended morning movers."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 20,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 10,
+      "rank_feature": "mom_vs_spy",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule040_CONTROL_NO_DAYHIGH_top15_rsleakfree_desc_slip15",
+      "rule": {
+        "id": "tech_rule_040_CONTROL_1130_no_dh_top15",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 120
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.004
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.5
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          }
+        ],
+        "notes": "Rule040 CONTROL: drops broke_day_high_this_bar==1. In stress n=909 P1+2.9 Fw+2.3 - rule collapses to near-zero. Confirms the day-high break is the actual signal source."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 15,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 15,
+      "rank_feature": "rs_leakfree",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule040_LOOSE2_atr10_top15_rsleakfree_desc_slip15",
+      "rule": {
+        "id": "tech_rule_040_LOOSE2_1130_atr10_top15",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 120
+          },
+          {
+            "feature": "broke_day_high_this_bar",
+            "op": "==",
+            "value": 1
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.004
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.5
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 10.0
+          }
+        ],
+        "notes": "Rule040 atr-loose variant: atr_reach<=10 (vs primary <=8). In stress n=77 P1+37.1 Fw+22.6 - more samples but Fwd weakens. Probes whether atr cap is necessary."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 15,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 15,
+      "rank_feature": "rs_leakfree",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule040_LOOSE_vol35_brd55_top15_rsleakfree_desc_slip15",
+      "rule": {
+        "id": "tech_rule_040_LOOSE_1130_vol35_brd55_top15",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 120
+          },
+          {
+            "feature": "broke_day_high_this_bar",
+            "op": "==",
+            "value": 1
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.0035
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.55
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          }
+        ],
+        "notes": "Rule040 LOOSE variant: vol>=0.0035 brd>=0.55. In stress n=55 P1+20.5 Fw+46.6 - shifts emphasis (lower P1 strength but similar/slightly fewer days). Sensitivity probe."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 15,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 15,
+      "rank_feature": "rs_leakfree",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule040_top15_rsleakfree_desc_tp100_sl200_slip10_fullspan",
+      "rule": {
+        "id": "tech_rule_040_1130_dh_break_highvol_breadth_top15",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 120
+          },
+          {
+            "feature": "broke_day_high_this_bar",
+            "op": "==",
+            "value": 1
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.004
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.5
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          }
+        ],
+        "notes": "Rule040 candidate: 11:30 ET Information Technology day-high breakout in confirmed regime. Predicates: broke_day_high_this_bar==1 (price broke its day-high in current bar), spy_vol>=0.004 (elevated regime), sector_breadth_up>=0.5 (majority Tech up), atr_reach<=8 (not exhausted). Top 15 by rs_leakfree desc. n=53 trades over 22 firing days (P1: 18/10d, Fwd: 35/12d). 11% key-overlap with existing rules (47 of 53 picks NEW). 0% double-cross (path stats clean). P1 mid_s15=+53.0(pe=+53.0) Fwd mid_s15=+40.2(pe=+35.9). CAVEAT: Phase 1 sample is THIN (n=18, 10 days). One P1 quarter (2025Q3) had a single trade hitting -165 bps. All ranking metrics give IDENTICAL results - pool too small for rank to matter (avg 2.6 stocks/day). broke_day_high_this_bar is the heavy lifter (without it: P1+2.9 Fw+2.3). Robust to all single-symbol drops and single-quarter drops."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 10,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 15,
+      "rank_feature": "rs_leakfree",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule040_top15_rsleakfree_desc_tp100_sl200_slip15_fullspan",
+      "rule": {
+        "id": "tech_rule_040_1130_dh_break_highvol_breadth_top15",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 120
+          },
+          {
+            "feature": "broke_day_high_this_bar",
+            "op": "==",
+            "value": 1
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.004
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.5
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          }
+        ],
+        "notes": "Rule040 candidate: 11:30 ET Information Technology day-high breakout in confirmed regime. Predicates: broke_day_high_this_bar==1 (price broke its day-high in current bar), spy_vol>=0.004 (elevated regime), sector_breadth_up>=0.5 (majority Tech up), atr_reach<=8 (not exhausted). Top 15 by rs_leakfree desc. n=53 trades over 22 firing days (P1: 18/10d, Fwd: 35/12d). 11% key-overlap with existing rules (47 of 53 picks NEW). 0% double-cross (path stats clean). P1 mid_s15=+53.0(pe=+53.0) Fwd mid_s15=+40.2(pe=+35.9). CAVEAT: Phase 1 sample is THIN (n=18, 10 days). One P1 quarter (2025Q3) had a single trade hitting -165 bps. All ranking metrics give IDENTICAL results - pool too small for rank to matter (avg 2.6 stocks/day). broke_day_high_this_bar is the heavy lifter (without it: P1+2.9 Fw+2.3). Robust to all single-symbol drops and single-quarter drops."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 15,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 15,
+      "rank_feature": "rs_leakfree",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule040_top15_rsleakfree_desc_tp100_sl200_slip20_fullspan",
+      "rule": {
+        "id": "tech_rule_040_1130_dh_break_highvol_breadth_top15",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 120
+          },
+          {
+            "feature": "broke_day_high_this_bar",
+            "op": "==",
+            "value": 1
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.004
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.5
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          }
+        ],
+        "notes": "Rule040 candidate: 11:30 ET Information Technology day-high breakout in confirmed regime. Predicates: broke_day_high_this_bar==1 (price broke its day-high in current bar), spy_vol>=0.004 (elevated regime), sector_breadth_up>=0.5 (majority Tech up), atr_reach<=8 (not exhausted). Top 15 by rs_leakfree desc. n=53 trades over 22 firing days (P1: 18/10d, Fwd: 35/12d). 11% key-overlap with existing rules (47 of 53 picks NEW). 0% double-cross (path stats clean). P1 mid_s15=+53.0(pe=+53.0) Fwd mid_s15=+40.2(pe=+35.9). CAVEAT: Phase 1 sample is THIN (n=18, 10 days). One P1 quarter (2025Q3) had a single trade hitting -165 bps. All ranking metrics give IDENTICAL results - pool too small for rank to matter (avg 2.6 stocks/day). broke_day_high_this_bar is the heavy lifter (without it: P1+2.9 Fw+2.3). Robust to all single-symbol drops and single-quarter drops."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 20,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 15,
+      "rank_feature": "rs_leakfree",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule041_ALTRANK_top15_momentum_desc_slip15",
+      "rule": {
+        "id": "tech_rule_041_1330_orb_break_top15_momentum",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "broke_opening_range_high",
+            "op": "==",
+            "value": 1
+          },
+          {
+            "feature": "orb_strength",
+            "op": ">=",
+            "value": 1.0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 6.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.3
+          }
+        ],
+        "notes": "Rule041 alt-rank: momentum desc (vs orb_strength). Same predicates. In stress P1+25.3(pe+3.0) Fw+47.4(pe+30.1) vs orb_strength's P1+27.1(pe+7.4). orb_strength gives slightly cleaner P1 pessimistic."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 15,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 15,
+      "rank_feature": "momentum",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule041_CONTROL_NO_ATR_top15_orb_strength_desc_slip15",
+      "rule": {
+        "id": "tech_rule_041_CONTROL_1330_no_atr_top15",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "broke_opening_range_high",
+            "op": "==",
+            "value": 1
+          },
+          {
+            "feature": "orb_strength",
+            "op": ">=",
+            "value": 1.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.3
+          }
+        ],
+        "notes": "Rule041 CONTROL: drops atr_reach<=6 cap. In stress n=3184 P1-11.5 Fw-8.2 - DESTROYS the rule. Confirms atr<=6 is the essential filter. Diagnostic only - DO NOT USE."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 15,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 15,
+      "rank_feature": "orb_strength",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule041_CONTROL_NO_BREADTH_top15_orb_strength_desc_slip15",
+      "rule": {
+        "id": "tech_rule_041_CONTROL_1330_no_brd_top15",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "broke_opening_range_high",
+            "op": "==",
+            "value": 1
+          },
+          {
+            "feature": "orb_strength",
+            "op": ">=",
+            "value": 1.0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 6.0
+          }
+        ],
+        "notes": "Rule041 CONTROL: drops sector_breadth_up>=0.30. In stress n=105 P1+28.5 Fw+47.4 - basically identical. Confirms breadth filter near-inert at this scope (atr<=6 already does the work). Diagnostic only."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 15,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 15,
+      "rank_feature": "orb_strength",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule041_LOOSE_orb05_top15_orb_strength_desc_slip15",
+      "rule": {
+        "id": "tech_rule_041_LOOSE_1330_orb05_top15",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "broke_opening_range_high",
+            "op": "==",
+            "value": 1
+          },
+          {
+            "feature": "orb_strength",
+            "op": ">=",
+            "value": 0.5
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 6.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.3
+          }
+        ],
+        "notes": "Rule041 LOOSE variant: orb_strength>=0.5 (vs primary 1.0). In stress n=134 P1+25.3 Fw+41.5 - more samples, similar Fwd. Lower bound of orb plateau."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 15,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 15,
+      "rank_feature": "orb_strength",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule041_TIGHT_orb125_top15_orb_strength_desc_slip15",
+      "rule": {
+        "id": "tech_rule_041_TIGHT_1330_orb125_top15",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "broke_opening_range_high",
+            "op": "==",
+            "value": 1
+          },
+          {
+            "feature": "orb_strength",
+            "op": ">=",
+            "value": 1.25
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 6.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.3
+          }
+        ],
+        "notes": "Rule041 TIGHT variant: orb_strength>=1.25 (vs primary 1.0). In stress n=94 P1+28.6 Fw+44.2. Sensitivity probe."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 15,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 15,
+      "rank_feature": "orb_strength",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule041_top15_orb_strength_desc_tp100_sl200_slip10_fullspan",
+      "rule": {
+        "id": "tech_rule_041_1330_orb_break_atr6_breadth_top15",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "broke_opening_range_high",
+            "op": "==",
+            "value": 1
+          },
+          {
+            "feature": "orb_strength",
+            "op": ">=",
+            "value": 1.0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 6.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.3
+          }
+        ],
+        "notes": "Rule041 candidate: 13:30 ET Information Technology Opening-Range-Breakout sustained. Predicates: broke_opening_range_high==1 (price broke ORH), orb_strength>=1.0 (>=1 ATR above ORH), atr_reach<=6 (NOT exhausted), sector_breadth_up>=0.30. Top 15 by orb_strength desc. n=102 trades over 55 firing days (P1: 76/39d, Fwd: 26/16d). 16% key-overlap with existing rules - 86 picks NEW. Path stats: P1 66% TP-only, 4% SL-only, 13% both, 17% neither; Fw 81% TP-only - very TP-clean. P1 mid_s15=+27.1(pe=+7.4) Fwd mid_s15=+47.4(pe=+30.1). CAVEAT: Phase 1 strength HEAVILY concentrated in 2025Q2 (39 of 76 P1 trades, m15=+55). Drop 2025Q2 -> P1 falls to -2.3. Earlier P1 quarters (2024Q2-Q4) negative (-5/-37/-8). atr_reach<=6 cap is THE essential filter (without it: P1-11.5 Fw-8.2). broke_opening_range_high filter NOT essential (orb_strength>=1.0 already implies it). Symbol concentration: SMCI 22/102 (21.6%) - drop SMCI actually IMPROVES P1 to +41.9. Forward strength is robust across both Forward quarters (+35 then +51)."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 10,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 15,
+      "rank_feature": "orb_strength",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule041_top15_orb_strength_desc_tp100_sl200_slip15_fullspan",
+      "rule": {
+        "id": "tech_rule_041_1330_orb_break_atr6_breadth_top15",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "broke_opening_range_high",
+            "op": "==",
+            "value": 1
+          },
+          {
+            "feature": "orb_strength",
+            "op": ">=",
+            "value": 1.0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 6.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.3
+          }
+        ],
+        "notes": "Rule041 candidate: 13:30 ET Information Technology Opening-Range-Breakout sustained. Predicates: broke_opening_range_high==1 (price broke ORH), orb_strength>=1.0 (>=1 ATR above ORH), atr_reach<=6 (NOT exhausted), sector_breadth_up>=0.30. Top 15 by orb_strength desc. n=102 trades over 55 firing days (P1: 76/39d, Fwd: 26/16d). 16% key-overlap with existing rules - 86 picks NEW. Path stats: P1 66% TP-only, 4% SL-only, 13% both, 17% neither; Fw 81% TP-only - very TP-clean. P1 mid_s15=+27.1(pe=+7.4) Fwd mid_s15=+47.4(pe=+30.1). CAVEAT: Phase 1 strength HEAVILY concentrated in 2025Q2 (39 of 76 P1 trades, m15=+55). Drop 2025Q2 -> P1 falls to -2.3. Earlier P1 quarters (2024Q2-Q4) negative (-5/-37/-8). atr_reach<=6 cap is THE essential filter (without it: P1-11.5 Fw-8.2). broke_opening_range_high filter NOT essential (orb_strength>=1.0 already implies it). Symbol concentration: SMCI 22/102 (21.6%) - drop SMCI actually IMPROVES P1 to +41.9. Forward strength is robust across both Forward quarters (+35 then +51)."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 15,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 15,
+      "rank_feature": "orb_strength",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "rule041_top15_orb_strength_desc_tp100_sl200_slip20_fullspan",
+      "rule": {
+        "id": "tech_rule_041_1330_orb_break_atr6_breadth_top15",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "broke_opening_range_high",
+            "op": "==",
+            "value": 1
+          },
+          {
+            "feature": "orb_strength",
+            "op": ">=",
+            "value": 1.0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 6.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.3
+          }
+        ],
+        "notes": "Rule041 candidate: 13:30 ET Information Technology Opening-Range-Breakout sustained. Predicates: broke_opening_range_high==1 (price broke ORH), orb_strength>=1.0 (>=1 ATR above ORH), atr_reach<=6 (NOT exhausted), sector_breadth_up>=0.30. Top 15 by orb_strength desc. n=102 trades over 55 firing days (P1: 76/39d, Fwd: 26/16d). 16% key-overlap with existing rules - 86 picks NEW. Path stats: P1 66% TP-only, 4% SL-only, 13% both, 17% neither; Fw 81% TP-only - very TP-clean. P1 mid_s15=+27.1(pe=+7.4) Fwd mid_s15=+47.4(pe=+30.1). CAVEAT: Phase 1 strength HEAVILY concentrated in 2025Q2 (39 of 76 P1 trades, m15=+55). Drop 2025Q2 -> P1 falls to -2.3. Earlier P1 quarters (2024Q2-Q4) negative (-5/-37/-8). atr_reach<=6 cap is THE essential filter (without it: P1-11.5 Fw-8.2). broke_opening_range_high filter NOT essential (orb_strength>=1.0 already implies it). Symbol concentration: SMCI 22/102 (21.6%) - drop SMCI actually IMPROVES P1 to +41.9. Forward strength is robust across both Forward quarters (+35 then +51)."
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "timestop_et": "15:50",
+      "slippage_bps": 20,
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "filter_mode": "standard",
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "max_signals_per_day": 15,
+      "rank_feature": "orb_strength",
+      "rank_direction": "desc",
+      "just_in_time_backfill": true,
+      "conditional_exits": []
+    }
+  ],
+  "notes": "Claude discovery package integrated into v0.7.37 for standalone path-dependent validation. 22 presets, within the 25-preset batch limit."
+}

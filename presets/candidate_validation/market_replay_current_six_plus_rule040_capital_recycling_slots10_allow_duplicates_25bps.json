@@ -1,0 +1,25 @@
+{
+  "start_date": "2024-04-22",
+  "end_date": "2026-04-17",
+  "sector": "Information Technology",
+  "rules": [
+    "rule009_refined_top10",
+    "rule029_top3",
+    "rule036B_cap10",
+    "rule033_top20",
+    "rule034_conservative_top20",
+    "rule038_top15",
+    "rule040_top15"
+  ],
+  "slippage_bps": 25.0,
+  "global_max_trades_per_day": 0,
+  "max_trades_per_symbol_per_day": 0,
+  "dedupe_policy": "allow_all",
+  "capital_mode": "capital_recycling_fixed_slots",
+  "include_virtual_trades": true,
+  "capital_recycling_enabled": true,
+  "capital_slots": 10,
+  "just_in_time_backfill": true,
+  "delete_raw_bars_after": false,
+  "notes": "Capital-recycling test: current six plus Rule040."
+}
