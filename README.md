@@ -75,3 +75,6 @@ All rule shadow endpoints are read-only; no live trading is enabled.
 ## v0.7.29 Rule034 merged monitor
 
 Adds Rule034 conservative monitoring on top of the combined Rule009 refined + Rule029 + Rule033 build. Rule034 is a conservative Rule033 miss-exclusion variant: Rule033 plus `gap_filled == 0` and `atr_reach <= 10`, with UI buttons, `/rule034/shadow/run`, and promoted presets.
+
+## v0.7.35 Rule038 live-shadow candidate
+Rule038 has been promoted from replay_candidate to promoted_shadow_candidate after passing the six-rule 25 bps market replay gate. This does not authorize live trading; it enables live-shadow evidence collection.

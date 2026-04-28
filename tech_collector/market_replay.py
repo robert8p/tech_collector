@@ -160,7 +160,7 @@ def registry(sector: str = "Information Technology") -> dict[str, ReplayRuleSpec
         "rule038_top15": ReplayRuleSpec(
             rule_id="rule038_top15",
             display_name="Rule038 top15 high-vol breadth ATR-low",
-            status="replay_candidate",
+            status="promoted_shadow_candidate",
             priority=36,
             sector=sector,
             rule=_rule(
@@ -175,7 +175,7 @@ def registry(sector: str = "Information Technology") -> dict[str, ReplayRuleSpec
                     {"feature": "atr_reach", "op": "<=", "value": 8.0},
                     {"feature": "sector_breadth_up", "op": ">=", "value": 0.4},
                 ],
-                "13:30 Technology high-volatility controlled momentum with sector-breadth confirmation; rank by rs_leakfree desc; top15 replay candidate.",
+                "13:30 Technology high-volatility controlled momentum with sector-breadth confirmation; rank by rs_leakfree desc; top15 live-shadow candidate.",
             ),
             scan_time_et="13:30",
             rank_feature="rs_leakfree",
@@ -184,7 +184,7 @@ def registry(sector: str = "Information Technology") -> dict[str, ReplayRuleSpec
             tp_bps=100,
             sl_bps=200,
             default_slippage_bps=25,
-            notes="Rule038 v4 standalone app batch was strongly positive at 10/15/20 bps; replay-candidate only until combined five-rule market replay confirms incremental value.",
+            notes="Rule038 v4 standalone batch and six-rule 25 bps market replay were strongly positive; promote to live-shadow evidence collection, not live capital.",
         ),
         "rule033_top20": ReplayRuleSpec(
             rule_id="rule033_top20",

@@ -13,7 +13,7 @@
   ],
   "default_rules_unchanged": true,
   "rule038_registry_id": "rule038_top15",
-  "rule038_status": "replay_candidate",
+  "rule038_status": "promoted_shadow_candidate",
   "post_deploy_evidence_needed": [
     "market_replay_current_five_25bps_cap10",
     "market_replay_rule038_only_25bps_cap10",

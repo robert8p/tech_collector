@@ -146,7 +146,7 @@ EVIDENCE_PACK_DIR: str = _os.environ.get(
     "EVIDENCE_PACK_DIR", _os.path.join(_DATA_DIR, "evidence_packs")
 )
 APP_NAME: str = "tech-collector"
-APP_VERSION: str = "0.7.34"
+APP_VERSION: str = "0.7.35"
 
 # ---------------------------------------------------------------------------
 # API auth — set API_KEY env var in Render dashboard. Requests without a
