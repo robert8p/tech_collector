@@ -574,7 +574,9 @@
         <button class="small" id="mr-run-r009" type="button">run Rule009 only</button>
         <button class="small" id="mr-run-r029" type="button">run Rule029 only</button>
         <button class="small" id="mr-run-r009-r029" type="button">run Rule009 + Rule029</button>
-        <button class="small" id="mr-run-all" type="button">run all active rules ▶</button>
+        <button class="small" id="mr-run-r036b" type="button">run Rule036B only</button>
+        <button class="small" id="mr-run-all-legacy" type="button">run legacy active rules</button>
+        <button class="small" id="mr-run-all" type="button">run all active + Rule036B ▶</button>
       </div>
     </div>
     <div class="row" style="gap: 8px; align-items: end; margin-top: 10px;">
@@ -604,7 +606,7 @@
     </div>
     <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px;">
       <button class="small" id="mr-refresh-packs" type="button">refresh packs</button>
-      <span style="color: var(--text-faint); font-size: 11px;">Default priority: Rule029 &gt; Rule009 refined &gt; Rule034 &gt; Rule033. Use the ZIP output to assess combined-scanner edge, overlap, rejected signals, symbol concentration, and worst days.</span>
+      <span style="color: var(--text-faint); font-size: 11px;">Default priority: Rule029 &gt; Rule009 refined &gt; Rule034 &gt; Rule036B &gt; Rule033. Use the ZIP output to assess combined-scanner edge, overlap, rejected signals, symbol concentration, and worst days.</span>
     </div>
     <div id="mr-status" style="display:none; margin-top: 8px; color: var(--text-dim); font-size: 11px; font-family: var(--mono); white-space: pre-wrap;"></div>
   </div>
@@ -2952,7 +2954,7 @@ function toast(msg, kind) {
 }
 
 
-// v0.7.30 historic multi-rule market replay controls
+// v0.7.32 historic multi-rule market replay controls
 function _mrStatus(msg, kind) {
   const out = document.getElementById("mr-status");
   if (!out) return;
@@ -3025,8 +3027,12 @@ const _mrR029 = document.getElementById("mr-run-r029");
 if (_mrR029) _mrR029.onclick = () => _runMarketReplay(["rule029_top3"], "Rule029 only");
 const _mrR009R029 = document.getElementById("mr-run-r009-r029");
 if (_mrR009R029) _mrR009R029.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3"], "Rule009 + Rule029");
+const _mrR036B = document.getElementById("mr-run-r036b");
+if (_mrR036B) _mrR036B.onclick = () => _runMarketReplay(["rule036B_cap10"], "Rule036B only");
+const _mrAllLegacy = document.getElementById("mr-run-all-legacy");
+if (_mrAllLegacy) _mrAllLegacy.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule033_top20", "rule034_conservative_top20"], "legacy active rules");
 const _mrAll = document.getElementById("mr-run-all");
-if (_mrAll) _mrAll.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule033_top20", "rule034_conservative_top20"], "all active rules");
+if (_mrAll) _mrAll.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20"], "all active + Rule036B");
 const _mrRefresh = document.getElementById("mr-refresh-packs");
 if (_mrRefresh) _mrRefresh.onclick = refreshPacks;
 boot();

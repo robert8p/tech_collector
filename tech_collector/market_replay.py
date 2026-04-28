@@ -1,4 +1,4 @@
-"""Multi-rule historical market replay engine (v0.7.30).
+"""Multi-rule historical market replay engine (v0.7.32).
 
 This module answers a different question from standalone backtests:
     "If the live scanner had evaluated all active rules each historical day,
@@ -67,7 +67,7 @@ def _rule(rule_id: str, sector: str, predicates: list[dict], notes: str) -> rule
 
 
 def registry(sector: str = "Information Technology") -> dict[str, ReplayRuleSpec]:
-    """Return the canonical v0.7.30 multi-rule replay registry."""
+    """Return the canonical v0.7.32 multi-rule replay registry."""
     return {
         "rule029_top3": ReplayRuleSpec(
             rule_id="rule029_top3",
@@ -123,6 +123,38 @@ def registry(sector: str = "Information Technology") -> dict[str, ReplayRuleSpec
             sl_bps=200,
             default_slippage_bps=25,
             notes="Current Rule009 refined benchmark.",
+        ),
+
+        "rule036B_cap10": ReplayRuleSpec(
+            rule_id="rule036B_cap10",
+            display_name="Rule036B cap10 positive continuation",
+            status="promoted_shadow_candidate",
+            priority=35,
+            sector=sector,
+            rule=_rule(
+                "tech_rule_036B_refined_1330_posContinuation_lowATR8_rangeLoose",
+                sector,
+                [
+                    {"feature": "minutes_since_open", "op": "==", "value": 240},
+                    {"feature": "spy_vol", "op": "<", "value": 0.0075},
+                    {"feature": "spy_momentum", "op": ">=", "value": -0.001},
+                    {"feature": "momentum", "op": ">", "value": 0.0008},
+                    {"feature": "mom_vs_spy", "op": ">", "value": 0},
+                    {"feature": "distance_to_vwap", "op": ">", "value": 0},
+                    {"feature": "atr_reach", "op": "<=", "value": 8.0},
+                    {"feature": "rsi_14", "op": ">=", "value": 55},
+                    {"feature": "range_tightness_30m", "op": ">=", "value": 0.00253},
+                ],
+                "13:30 Technology positive-continuation rule; low ATR reach and range looseness; rank by momentum desc; cap10 operating candidate.",
+            ),
+            scan_time_et="13:30",
+            rank_feature="momentum",
+            rank_direction="desc",
+            max_signals_per_day=10,
+            tp_bps=100,
+            sl_bps=200,
+            default_slippage_bps=25,
+            notes="Validated in standalone path-dependent stress at 20/25/30 bps; run combined replay before live-shadow use.",
         ),
         "rule033_top20": ReplayRuleSpec(
             rule_id="rule033_top20",
@@ -182,7 +214,7 @@ def registry(sector: str = "Information Technology") -> dict[str, ReplayRuleSpec
     }
 
 
-DEFAULT_RULE_IDS = ["rule009_refined_top10", "rule029_top3", "rule033_top20", "rule034_conservative_top20"]
+DEFAULT_RULE_IDS = ["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20"]
 
 
 # ---------------------------------------------------------------------------

@@ -2894,7 +2894,7 @@ def rule034_shadow_run(req: Rule034ShadowRequest):
 
 
 # ---------------------------------------------------------------------------
-# Multi-rule historic market replay (v0.7.30)
+# Multi-rule historic market replay (v0.7.32)
 # ---------------------------------------------------------------------------
 class MarketReplayRunRequest(BaseModel):
     """Replay the historical market the way the future live scanner should behave.
@@ -2908,7 +2908,7 @@ class MarketReplayRunRequest(BaseModel):
     sector: str = Field(default="Information Technology")
     rules: list[str] = Field(
         default_factory=lambda: [
-            "rule009_refined_top10", "rule029_top3", "rule033_top20", "rule034_conservative_top20"
+            "rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20"
         ],
         description="Rule registry ids to include. See /market-replay/rules.",
     )

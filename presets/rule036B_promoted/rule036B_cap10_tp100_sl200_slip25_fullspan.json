@@ -1,0 +1,72 @@
+{
+  "preset_type": "tech_collector_backtest_preset",
+  "preset_version": 1,
+  "label": "rule036B_1330_posContinuation_lowATR8_rangeLoose_cap10_tp100_sl200_slip25_fullspan",
+  "rule": {
+    "id": "tech_rule_036B_refined_1330_posContinuation_lowATR8_rangeLoose",
+    "sector": "Information Technology",
+    "target": "target",
+    "predicates": [
+      {
+        "feature": "minutes_since_open",
+        "op": "==",
+        "value": 240
+      },
+      {
+        "feature": "spy_vol",
+        "op": "<",
+        "value": 0.0075
+      },
+      {
+        "feature": "spy_momentum",
+        "op": ">=",
+        "value": -0.001
+      },
+      {
+        "feature": "momentum",
+        "op": ">",
+        "value": 0.0008
+      },
+      {
+        "feature": "mom_vs_spy",
+        "op": ">",
+        "value": 0
+      },
+      {
+        "feature": "distance_to_vwap",
+        "op": ">",
+        "value": 0
+      },
+      {
+        "feature": "atr_reach",
+        "op": "<=",
+        "value": 8.0
+      },
+      {
+        "feature": "rsi_14",
+        "op": ">=",
+        "value": 55
+      },
+      {
+        "feature": "range_tightness_30m",
+        "op": ">=",
+        "value": 0.00253
+      }
+    ],
+    "notes": "Rule036B 13:30 Technology positive-continuation candidate. Rank by momentum descending. Cap10 operating candidate after stress testing; run combined market replay before live-shadow use."
+  },
+  "tp_bps": 100,
+  "sl_bps": 200,
+  "timestop_et": "15:50",
+  "slippage_bps": 25,
+  "start_date": "2024-04-22",
+  "end_date": "2026-04-17",
+  "filter_mode": "standard",
+  "entry_delay_minutes": 1,
+  "min_exit_minutes": 1,
+  "max_signals_per_day": 10,
+  "rank_feature": "momentum",
+  "rank_direction": "desc",
+  "just_in_time_backfill": true,
+  "conditional_exits": []
+}
