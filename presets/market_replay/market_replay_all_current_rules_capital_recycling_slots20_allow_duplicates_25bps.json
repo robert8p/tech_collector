@@ -8,7 +8,8 @@
     "rule036B_cap10",
     "rule033_top20",
     "rule034_conservative_top20",
-    "rule038_top15"
+    "rule038_top15",
+    "rule040_top15"
   ],
   "slippage_bps": 25.0,
   "global_max_trades_per_day": 0,
@@ -20,5 +21,5 @@
   "capital_slots": 20,
   "just_in_time_backfill": true,
   "delete_raw_bars_after": false,
-  "notes": "v0.7.36 capital-recycling replay: 20 concurrent capital slots, duplicate signals allowed as separate investments, queued signals opened after exits."
+  "notes": "v0.7.38 capital-recycling replay: 20 concurrent capital slots, duplicate signals allowed as separate investments, queued signals opened after exits."
 }

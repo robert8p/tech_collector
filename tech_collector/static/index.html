@@ -576,11 +576,11 @@
         <button class="small" id="mr-run-r009-r029" type="button">run Rule009 + Rule029</button>
         <button class="small" id="mr-run-r036b" type="button">run Rule036B only</button>
         <button class="small" id="mr-run-r038" type="button">run Rule038 only</button>
-        <button class="small" id="mr-run-current-six" type="button">run current six</button>
+        <button class="small" id="mr-run-current-six" type="button">run current seven</button>
         <button class="small" id="mr-run-current-six-r039" type="button">run current six + Rule039 ▶</button>
-        <button class="small" id="mr-run-current-six-r040" type="button">run current six + Rule040</button>
+        <button class="small" id="mr-run-current-six-r040" type="button">run legacy current six</button>
         <button class="small" id="mr-run-current-six-r041" type="button">run current six + Rule041</button>
-        <button class="small" id="mr-run-capital-recycling-all" type="button" title="Runs all current rules with finite capital slots, duplicate signals allowed, and slot reuse after exits.">run capital-recycling all rules ▶</button>
+        <button class="small" id="mr-run-capital-recycling-all" type="button" title="Runs all current promoted rules with finite capital slots, duplicate signals allowed, and slot reuse after exits.">run capital-recycling current seven ▶</button>
       </div>
     </div>
     <div class="row" style="gap: 8px; align-items: end; margin-top: 10px;">
@@ -3073,11 +3073,11 @@ if (_mrR036B) _mrR036B.onclick = () => _runMarketReplay(["rule036B_cap10"], "Rul
 const _mrR038 = document.getElementById("mr-run-r038");
 if (_mrR038) _mrR038.onclick = () => _runMarketReplay(["rule038_top15"], "Rule038 only");
 const _mrCurrentSix = document.getElementById("mr-run-current-six");
-if (_mrCurrentSix) _mrCurrentSix.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15"], "current six");
+if (_mrCurrentSix) _mrCurrentSix.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15", "rule040_top15"], "current seven");
 const _mrCurrentSixR039 = document.getElementById("mr-run-current-six-r039");
 if (_mrCurrentSixR039) _mrCurrentSixR039.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15", "rule039_top10"], "current six + Rule039");
 const _mrCurrentSixR040 = document.getElementById("mr-run-current-six-r040");
-if (_mrCurrentSixR040) _mrCurrentSixR040.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15", "rule040_top15"], "current six + Rule040");
+if (_mrCurrentSixR040) _mrCurrentSixR040.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15"], "legacy current six");
 const _mrCurrentSixR041 = document.getElementById("mr-run-current-six-r041");
 if (_mrCurrentSixR041) _mrCurrentSixR041.onclick = () => _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15", "rule041_top15"], "current six + Rule041");
 const _mrCapitalRecyclingAll = document.getElementById("mr-run-capital-recycling-all");
@@ -3085,7 +3085,7 @@ if (_mrCapitalRecyclingAll) _mrCapitalRecyclingAll.onclick = () => {
   if (document.getElementById("mr-capital-recycling")) document.getElementById("mr-capital-recycling").checked = true;
   if (document.getElementById("mr-dedupe")) document.getElementById("mr-dedupe").value = "allow_all";
   if (document.getElementById("mr-max-day")) document.getElementById("mr-max-day").value = "0";
-  return _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15"], "capital recycling all current rules");
+  return _runMarketReplay(["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15", "rule040_top15"], "capital recycling current seven");
 };
 const _mrRunFile = document.getElementById("mr-run-file");
 if (_mrRunFile) _mrRunFile.onclick = _runUploadedMarketReplayJson;

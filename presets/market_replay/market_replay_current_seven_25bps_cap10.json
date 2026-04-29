@@ -12,14 +12,14 @@
     "rule040_top15"
   ],
   "slippage_bps": 25.0,
-  "global_max_trades_per_day": 0,
-  "max_trades_per_symbol_per_day": 0,
-  "dedupe_policy": "allow_all",
-  "capital_mode": "capital_recycling_fixed_slots",
+  "global_max_trades_per_day": 10,
+  "max_trades_per_symbol_per_day": 1,
+  "dedupe_policy": "best_priority",
+  "capital_mode": "equal_weight",
   "include_virtual_trades": true,
-  "capital_recycling_enabled": true,
-  "capital_slots": 5,
+  "capital_recycling_enabled": false,
+  "capital_slots": 10,
   "just_in_time_backfill": true,
   "delete_raw_bars_after": false,
-  "notes": "v0.7.38 capital-recycling replay: 5 concurrent capital slots, duplicate signals allowed as separate investments, queued signals opened after exits."
+  "notes": "Current seven-rule baseline at 25 bps after Rule040 promotion to live-shadow candidate."
 }

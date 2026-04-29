@@ -1,4 +1,4 @@
-"""Multi-rule historical market replay engine (v0.7.37).
+"""Multi-rule historical market replay engine (v0.7.38).
 
 This module answers a different question from standalone backtests:
     "If the live scanner had evaluated all active rules each historical day,
@@ -68,7 +68,7 @@ def _rule(rule_id: str, sector: str, predicates: list[dict], notes: str) -> rule
 
 
 def registry(sector: str = "Information Technology") -> dict[str, ReplayRuleSpec]:
-    """Return the canonical v0.7.37 multi-rule replay registry."""
+    """Return the canonical v0.7.38 multi-rule replay registry."""
     return {
         "rule029_top3": ReplayRuleSpec(
             rule_id="rule029_top3",
@@ -218,7 +218,7 @@ def registry(sector: str = "Information Technology") -> dict[str, ReplayRuleSpec
 "rule040_top15": ReplayRuleSpec(
     rule_id="rule040_top15",
     display_name="Rule040 top15 11:30 day-high breakout",
-    status="candidate_validation",
+    status="promoted_shadow_candidate",
     priority=25,
     sector=sector,
     rule=_rule(
@@ -240,7 +240,7 @@ def registry(sector: str = "Information Technology") -> dict[str, ReplayRuleSpec
     tp_bps=100,
     sl_bps=200,
     default_slippage_bps=25,
-    notes="Candidate only. Orthogonal on paper, but sample-thin. Must pass standalone and combined replay before any promotion.",
+    notes="Validated at 20 bps standalone, positive in current-six combined replay at 25 bps, and positive again in exact-settings capital-recycling replay with allow_all duplicates and 10 slots. Promote to live-shadow candidate, not live capital.",
 ),
 
 "rule041_top15": ReplayRuleSpec(
@@ -329,7 +329,7 @@ def registry(sector: str = "Information Technology") -> dict[str, ReplayRuleSpec
     }
 
 
-DEFAULT_RULE_IDS = ["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15"]
+DEFAULT_RULE_IDS = ["rule009_refined_top10", "rule029_top3", "rule036B_cap10", "rule033_top20", "rule034_conservative_top20", "rule038_top15", "rule040_top15"]
 
 
 # ---------------------------------------------------------------------------

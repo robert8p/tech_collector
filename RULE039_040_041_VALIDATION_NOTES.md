@@ -9,3 +9,10 @@ What changed:
 
 Important caution:
 Claude's report benchmarked overlap against Rule009/029/033/034/038, but not Rule036B. Treat Rule041's claimed orthogonality as unproven until combined replay confirms it against the real six-rule baseline.
+
+
+## Outcome after validation
+
+- Rule039 rejected after combined replay and capital-economics review.
+- Rule041 rejected after combined replay and overlap review.
+- Rule040 promoted to live-shadow candidate after exact-settings capital-recycling confirmation.
