@@ -2923,6 +2923,8 @@ class MarketReplayRunRequest(BaseModel):
     include_virtual_trades: bool = Field(default=True)
     capital_recycling_enabled: bool = Field(default=False, description="If true, simulate finite capital slots that reopen when prior positions close.")
     capital_slots: int = Field(default=10, ge=1, le=500, description="Number of concurrent capital slots in capital-recycling mode.")
+    max_queue_wait_minutes: int = Field(default=0, ge=0, le=600, description="0 disables queue-age expiry. Positive values reject queued signals that wait longer than this many minutes before opening.")
+    rule_ids_immediate_only: list[str] = Field(default_factory=list, description="Optional replay-only list of rule ids that must open immediately at arrival or be rejected instead of queued.")
     just_in_time_backfill: bool = Field(default=True)
     delete_raw_bars_after: bool = Field(default=False)
 
@@ -2954,6 +2956,8 @@ def _market_replay_job_wrapper(params: dict) -> dict:
         include_virtual_trades=bool(params.get("include_virtual_trades", True)),
         capital_recycling_enabled=bool(params.get("capital_recycling_enabled", False)),
         capital_slots=int(params.get("capital_slots", 10)),
+        max_queue_wait_minutes=int(params.get("max_queue_wait_minutes", 0)),
+        rule_ids_immediate_only=list(params.get("rule_ids_immediate_only", []) or []),
         just_in_time_backfill=bool(params.get("just_in_time_backfill", True)),
         delete_raw_bars_after=bool(params.get("delete_raw_bars_after", False)),
         db_path=config.DB_PATH,

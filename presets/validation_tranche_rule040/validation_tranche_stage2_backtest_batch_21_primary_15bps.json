@@ -1,0 +1,1414 @@
+{
+  "label": "validation_tranche_stage2_backtest_batch_21_primary_15bps",
+  "presets": [
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule009_FILT_momspy_gt_0p0004_standalone_15bps",
+      "rule": {
+        "id": "Rule009_FILT_momspy_gt_0p0004",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 60
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.005
+          },
+          {
+            "feature": "spy_momentum",
+            "op": ">=",
+            "value": 0
+          },
+          {
+            "feature": "gap_pct",
+            "op": "<=",
+            "value": 0
+          },
+          {
+            "feature": "range_expansion",
+            "op": ">=",
+            "value": 1.0
+          },
+          {
+            "feature": "mom_vs_spy",
+            "op": ">",
+            "value": 0.0004
+          }
+        ],
+        "notes": "Rule009_FILT_momspy_gt_0p0004_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "momentum",
+        "direction": "desc",
+        "top_k": 10
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule009_FILT_momspy_gt_0p0006_standalone_15bps",
+      "rule": {
+        "id": "Rule009_FILT_momspy_gt_0p0006",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 60
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.005
+          },
+          {
+            "feature": "spy_momentum",
+            "op": ">=",
+            "value": 0
+          },
+          {
+            "feature": "gap_pct",
+            "op": "<=",
+            "value": 0
+          },
+          {
+            "feature": "range_expansion",
+            "op": ">=",
+            "value": 1.0
+          },
+          {
+            "feature": "mom_vs_spy",
+            "op": ">",
+            "value": 0.0006
+          }
+        ],
+        "notes": "Rule009_FILT_momspy_gt_0p0006_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "momentum",
+        "direction": "desc",
+        "top_k": 10
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule009_FILT_momspy_gt_0p0008_standalone_15bps",
+      "rule": {
+        "id": "Rule009_FILT_momspy_gt_0p0008",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 60
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.005
+          },
+          {
+            "feature": "spy_momentum",
+            "op": ">=",
+            "value": 0
+          },
+          {
+            "feature": "gap_pct",
+            "op": "<=",
+            "value": 0
+          },
+          {
+            "feature": "range_expansion",
+            "op": ">=",
+            "value": 1.0
+          },
+          {
+            "feature": "mom_vs_spy",
+            "op": ">",
+            "value": 0.0008
+          }
+        ],
+        "notes": "Rule009_FILT_momspy_gt_0p0008_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "momentum",
+        "direction": "desc",
+        "top_k": 10
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule033_FILT_rangepos_lt_0p40_standalone_15bps",
+      "rule": {
+        "id": "Rule033_FILT_rangepos_lt_0p40",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "spy_ret",
+            "op": "<=",
+            "value": -0.0086881596898112
+          },
+          {
+            "feature": "momentum",
+            "op": "<=",
+            "value": -0.00135528523765575
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 13.0
+          },
+          {
+            "feature": "volume_acceleration",
+            "op": ">=",
+            "value": 1.0
+          },
+          {
+            "feature": "intraday_range_position",
+            "op": "<",
+            "value": 0.4
+          }
+        ],
+        "notes": "Rule033_FILT_rangepos_lt_0p40_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "distance_to_day_low",
+        "direction": "desc",
+        "top_k": 20
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule033_FILT_rangepos_lt_0p35_standalone_15bps",
+      "rule": {
+        "id": "Rule033_FILT_rangepos_lt_0p35",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "spy_ret",
+            "op": "<=",
+            "value": -0.0086881596898112
+          },
+          {
+            "feature": "momentum",
+            "op": "<=",
+            "value": -0.00135528523765575
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 13.0
+          },
+          {
+            "feature": "volume_acceleration",
+            "op": ">=",
+            "value": 1.0
+          },
+          {
+            "feature": "intraday_range_position",
+            "op": "<",
+            "value": 0.35
+          }
+        ],
+        "notes": "Rule033_FILT_rangepos_lt_0p35_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "distance_to_day_low",
+        "direction": "desc",
+        "top_k": 20
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule033_FILT_rangepos_lt_0p30_standalone_15bps",
+      "rule": {
+        "id": "Rule033_FILT_rangepos_lt_0p30",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "spy_ret",
+            "op": "<=",
+            "value": -0.0086881596898112
+          },
+          {
+            "feature": "momentum",
+            "op": "<=",
+            "value": -0.00135528523765575
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 13.0
+          },
+          {
+            "feature": "volume_acceleration",
+            "op": ">=",
+            "value": 1.0
+          },
+          {
+            "feature": "intraday_range_position",
+            "op": "<",
+            "value": 0.3
+          }
+        ],
+        "notes": "Rule033_FILT_rangepos_lt_0p30_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "distance_to_day_low",
+        "direction": "desc",
+        "top_k": 20
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule038_FILT_breadth_lt_0p85_standalone_15bps",
+      "rule": {
+        "id": "Rule038_FILT_breadth_lt_0p85",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.004
+          },
+          {
+            "feature": "spy_momentum",
+            "op": ">=",
+            "value": 0.0
+          },
+          {
+            "feature": "gap_pct",
+            "op": "<=",
+            "value": 0.0
+          },
+          {
+            "feature": "range_expansion",
+            "op": ">=",
+            "value": 1.0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.4
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": "<",
+            "value": 0.85
+          }
+        ],
+        "notes": "Rule038_FILT_breadth_lt_0p85_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "rs_leakfree",
+        "direction": "desc",
+        "top_k": 15
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule038_FILT_breadth_lt_0p83_standalone_15bps",
+      "rule": {
+        "id": "Rule038_FILT_breadth_lt_0p83",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.004
+          },
+          {
+            "feature": "spy_momentum",
+            "op": ">=",
+            "value": 0.0
+          },
+          {
+            "feature": "gap_pct",
+            "op": "<=",
+            "value": 0.0
+          },
+          {
+            "feature": "range_expansion",
+            "op": ">=",
+            "value": 1.0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.4
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": "<",
+            "value": 0.83
+          }
+        ],
+        "notes": "Rule038_FILT_breadth_lt_0p83_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "rs_leakfree",
+        "direction": "desc",
+        "top_k": 15
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule038_FILT_breadth_lt_0p80_standalone_15bps",
+      "rule": {
+        "id": "Rule038_FILT_breadth_lt_0p80",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "spy_vol",
+            "op": ">=",
+            "value": 0.004
+          },
+          {
+            "feature": "spy_momentum",
+            "op": ">=",
+            "value": 0.0
+          },
+          {
+            "feature": "gap_pct",
+            "op": "<=",
+            "value": 0.0
+          },
+          {
+            "feature": "range_expansion",
+            "op": ">=",
+            "value": 1.0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.4
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": "<",
+            "value": 0.8
+          }
+        ],
+        "notes": "Rule038_FILT_breadth_lt_0p80_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "rs_leakfree",
+        "direction": "desc",
+        "top_k": 15
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule036B_FILT_breadth_gt_0p40_standalone_15bps",
+      "rule": {
+        "id": "Rule036B_FILT_breadth_gt_0p40",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "spy_vol",
+            "op": "<",
+            "value": 0.0075
+          },
+          {
+            "feature": "spy_momentum",
+            "op": ">=",
+            "value": -0.001
+          },
+          {
+            "feature": "momentum",
+            "op": ">",
+            "value": 0.0008
+          },
+          {
+            "feature": "mom_vs_spy",
+            "op": ">",
+            "value": 0
+          },
+          {
+            "feature": "distance_to_vwap",
+            "op": ">",
+            "value": 0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          },
+          {
+            "feature": "rsi_14",
+            "op": ">=",
+            "value": 55
+          },
+          {
+            "feature": "range_tightness_30m",
+            "op": ">=",
+            "value": 0.00253
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">",
+            "value": 0.4
+          }
+        ],
+        "notes": "Rule036B_FILT_breadth_gt_0p40_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "momentum",
+        "direction": "desc",
+        "top_k": 10
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule036B_FILT_breadth_gt_0p43_standalone_15bps",
+      "rule": {
+        "id": "Rule036B_FILT_breadth_gt_0p43",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "spy_vol",
+            "op": "<",
+            "value": 0.0075
+          },
+          {
+            "feature": "spy_momentum",
+            "op": ">=",
+            "value": -0.001
+          },
+          {
+            "feature": "momentum",
+            "op": ">",
+            "value": 0.0008
+          },
+          {
+            "feature": "mom_vs_spy",
+            "op": ">",
+            "value": 0
+          },
+          {
+            "feature": "distance_to_vwap",
+            "op": ">",
+            "value": 0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          },
+          {
+            "feature": "rsi_14",
+            "op": ">=",
+            "value": 55
+          },
+          {
+            "feature": "range_tightness_30m",
+            "op": ">=",
+            "value": 0.00253
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">",
+            "value": 0.43
+          }
+        ],
+        "notes": "Rule036B_FILT_breadth_gt_0p43_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "momentum",
+        "direction": "desc",
+        "top_k": 10
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule036B_FILT_breadth_gt_0p46_standalone_15bps",
+      "rule": {
+        "id": "Rule036B_FILT_breadth_gt_0p46",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "spy_vol",
+            "op": "<",
+            "value": 0.0075
+          },
+          {
+            "feature": "spy_momentum",
+            "op": ">=",
+            "value": -0.001
+          },
+          {
+            "feature": "momentum",
+            "op": ">",
+            "value": 0.0008
+          },
+          {
+            "feature": "mom_vs_spy",
+            "op": ">",
+            "value": 0
+          },
+          {
+            "feature": "distance_to_vwap",
+            "op": ">",
+            "value": 0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          },
+          {
+            "feature": "rsi_14",
+            "op": ">=",
+            "value": 55
+          },
+          {
+            "feature": "range_tightness_30m",
+            "op": ">=",
+            "value": 0.00253
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">",
+            "value": 0.46
+          }
+        ],
+        "notes": "Rule036B_FILT_breadth_gt_0p46_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "momentum",
+        "direction": "desc",
+        "top_k": 10
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule042_1130_pullback_reclaim_A_standalone_15bps",
+      "rule": {
+        "id": "Rule042_1130_pullback_reclaim_A",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 120
+          },
+          {
+            "feature": "open_to_scan_return",
+            "op": "<=",
+            "value": -0.004
+          },
+          {
+            "feature": "open_to_scan_return",
+            "op": ">=",
+            "value": -0.03
+          },
+          {
+            "feature": "intraday_range_position",
+            "op": "<=",
+            "value": 0.55
+          },
+          {
+            "feature": "intraday_range_position",
+            "op": ">=",
+            "value": 0.2
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 6.5
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.45
+          },
+          {
+            "feature": "mom_vs_spy",
+            "op": ">",
+            "value": 0.0
+          },
+          {
+            "feature": "distance_to_vwap",
+            "op": ">=",
+            "value": -0.004
+          },
+          {
+            "feature": "vwap_slope",
+            "op": ">",
+            "value": -0.0005
+          }
+        ],
+        "notes": "Rule042_1130_pullback_reclaim_A_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "mom_vs_spy",
+        "direction": "desc",
+        "top_k": 5
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule042_1130_pullback_reclaim_B_standalone_15bps",
+      "rule": {
+        "id": "Rule042_1130_pullback_reclaim_B",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 120
+          },
+          {
+            "feature": "open_to_scan_return",
+            "op": "<=",
+            "value": -0.006
+          },
+          {
+            "feature": "open_to_scan_return",
+            "op": ">=",
+            "value": -0.025
+          },
+          {
+            "feature": "intraday_range_position",
+            "op": "<=",
+            "value": 0.5
+          },
+          {
+            "feature": "intraday_range_position",
+            "op": ">=",
+            "value": 0.15
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 7.5
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.4
+          },
+          {
+            "feature": "momentum",
+            "op": ">",
+            "value": 0.0
+          },
+          {
+            "feature": "distance_to_vwap",
+            "op": ">=",
+            "value": -0.003
+          },
+          {
+            "feature": "vwap_slope",
+            "op": ">",
+            "value": 0.0
+          }
+        ],
+        "notes": "Rule042_1130_pullback_reclaim_B_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "rs_leakfree",
+        "direction": "desc",
+        "top_k": 10
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule042_1130_pullback_reclaim_C_standalone_15bps",
+      "rule": {
+        "id": "Rule042_1130_pullback_reclaim_C",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 120
+          },
+          {
+            "feature": "open_to_scan_return",
+            "op": "<=",
+            "value": -0.008
+          },
+          {
+            "feature": "open_to_scan_return",
+            "op": ">=",
+            "value": -0.04
+          },
+          {
+            "feature": "intraday_range_position",
+            "op": "<=",
+            "value": 0.45
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.5
+          },
+          {
+            "feature": "mom_vs_spy",
+            "op": ">",
+            "value": 0.0005
+          },
+          {
+            "feature": "distance_to_vwap",
+            "op": ">",
+            "value": -0.002
+          }
+        ],
+        "notes": "Rule042_1130_pullback_reclaim_C_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "rs_leakfree",
+        "direction": "desc",
+        "top_k": 10
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule043_1430_compression_break_A_standalone_15bps",
+      "rule": {
+        "id": "Rule043_1430_compression_break_A",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 300
+          },
+          {
+            "feature": "broke_day_high_this_bar",
+            "op": "==",
+            "value": 1
+          },
+          {
+            "feature": "bars_in_range_20bps",
+            "op": ">=",
+            "value": 6
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 7.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.35
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": "<",
+            "value": 0.8
+          },
+          {
+            "feature": "spy_momentum",
+            "op": ">=",
+            "value": 0.0
+          }
+        ],
+        "notes": "Rule043_1430_compression_break_A_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "rs_leakfree",
+        "direction": "desc",
+        "top_k": 10
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule043_1430_compression_break_B_standalone_15bps",
+      "rule": {
+        "id": "Rule043_1430_compression_break_B",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 300
+          },
+          {
+            "feature": "broke_day_high_this_bar",
+            "op": "==",
+            "value": 1
+          },
+          {
+            "feature": "bars_in_range_20bps",
+            "op": ">=",
+            "value": 8
+          },
+          {
+            "feature": "open_to_scan_return",
+            "op": ">=",
+            "value": 0.002
+          },
+          {
+            "feature": "open_to_scan_return",
+            "op": "<=",
+            "value": 0.035
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.5
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.4
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": "<",
+            "value": 0.83
+          }
+        ],
+        "notes": "Rule043_1430_compression_break_B_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "mom_vs_spy",
+        "direction": "desc",
+        "top_k": 10
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule043_1430_compression_break_C_standalone_15bps",
+      "rule": {
+        "id": "Rule043_1430_compression_break_C",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 300
+          },
+          {
+            "feature": "broke_day_high_this_bar",
+            "op": "==",
+            "value": 1
+          },
+          {
+            "feature": "is_nr7",
+            "op": "==",
+            "value": 1
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 8.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.35
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": "<",
+            "value": 0.8
+          },
+          {
+            "feature": "distance_to_vwap",
+            "op": ">=",
+            "value": 0.0
+          }
+        ],
+        "notes": "Rule043_1430_compression_break_C_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "rs_leakfree",
+        "direction": "desc",
+        "top_k": 5
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule044_1330_lower_range_recovery_A_standalone_15bps",
+      "rule": {
+        "id": "Rule044_1330_lower_range_recovery_A",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "open_to_scan_return",
+            "op": "<=",
+            "value": -0.005
+          },
+          {
+            "feature": "open_to_scan_return",
+            "op": ">=",
+            "value": -0.04
+          },
+          {
+            "feature": "intraday_range_position",
+            "op": "<=",
+            "value": 0.35
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 9.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.4
+          },
+          {
+            "feature": "momentum",
+            "op": ">",
+            "value": 0.0
+          },
+          {
+            "feature": "distance_to_vwap",
+            "op": ">=",
+            "value": -0.003
+          }
+        ],
+        "notes": "Rule044_1330_lower_range_recovery_A_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "mom_vs_spy",
+        "direction": "desc",
+        "top_k": 10
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule044_1330_lower_range_recovery_B_standalone_15bps",
+      "rule": {
+        "id": "Rule044_1330_lower_range_recovery_B",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "open_to_scan_return",
+            "op": "<=",
+            "value": -0.01
+          },
+          {
+            "feature": "open_to_scan_return",
+            "op": ">=",
+            "value": -0.05
+          },
+          {
+            "feature": "intraday_range_position",
+            "op": "<=",
+            "value": 0.3
+          },
+          {
+            "feature": "vwap_slope",
+            "op": ">",
+            "value": 0.0
+          },
+          {
+            "feature": "mom_vs_spy",
+            "op": ">",
+            "value": 0.0
+          },
+          {
+            "feature": "atr_reach",
+            "op": "<=",
+            "value": 10.0
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.35
+          }
+        ],
+        "notes": "Rule044_1330_lower_range_recovery_B_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "rs_leakfree",
+        "direction": "desc",
+        "top_k": 10
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    },
+    {
+      "preset_type": "tech_collector_backtest_preset",
+      "preset_version": 1,
+      "label": "Rule044_1330_lower_range_recovery_C_standalone_15bps",
+      "rule": {
+        "id": "Rule044_1330_lower_range_recovery_C",
+        "sector": "Information Technology",
+        "target": "target",
+        "predicates": [
+          {
+            "feature": "minutes_since_open",
+            "op": "==",
+            "value": 240
+          },
+          {
+            "feature": "open_to_scan_return",
+            "op": "<=",
+            "value": -0.008
+          },
+          {
+            "feature": "open_to_scan_return",
+            "op": ">=",
+            "value": -0.03
+          },
+          {
+            "feature": "intraday_range_position",
+            "op": "<=",
+            "value": 0.4
+          },
+          {
+            "feature": "distance_to_vwap",
+            "op": ">",
+            "value": -0.001
+          },
+          {
+            "feature": "range_expansion",
+            "op": ">=",
+            "value": 0.6
+          },
+          {
+            "feature": "sector_breadth_up",
+            "op": ">=",
+            "value": 0.45
+          },
+          {
+            "feature": "momentum",
+            "op": ">",
+            "value": 0.0005
+          }
+        ],
+        "notes": "Rule044_1330_lower_range_recovery_C_standalone_15bps"
+      },
+      "tp_bps": 100,
+      "sl_bps": 200,
+      "slippage_bps": 15,
+      "entry_delay_minutes": 1,
+      "min_exit_minutes": 1,
+      "timestop_et": "15:50",
+      "ranking": {
+        "feature": "mom_vs_spy",
+        "direction": "desc",
+        "top_k": 5
+      },
+      "start_date": "2024-04-22",
+      "end_date": "2026-04-17",
+      "delete_raw_bars_after": false,
+      "just_in_time_backfill": true
+    }
+  ],
+  "stop_on_error": false
+}
